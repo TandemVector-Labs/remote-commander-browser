@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: CEF-free native UI source, Theme and tab-X contract
+        run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
 
       - name: Verify preview version
         shell: pwsh
@@ -195,6 +197,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: CEF-free native UI source, Theme and tab-X contract
+        run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
 
       - name: Install Linux build dependencies
         run: |

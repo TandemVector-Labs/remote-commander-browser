@@ -1,0 +1,39 @@
+name: Browser login and active runtime preservation R213
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/uninstall-local.sh'
+      - 'test/browser-uninstall-preservation-r213.test.mjs'
+      - '.github/workflows/browser-retirement-safety-r213.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-preservation-r213-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-no-delete-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - name: Exact-head parser and profile deletion-denial regression
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected"
+          bash -n scripts/uninstall-local.sh
+          node --check test/browser-uninstall-preservation-r213.test.mjs
+          node --test test/browser-uninstall-preservation-r213.test.mjs
+          echo 'R213_PROFILE_RUNTIME_RETIREMENT_GUARD_PASS'
