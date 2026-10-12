@@ -229,6 +229,7 @@ std::string Utf8Ellipsize(const std::string& input, size_t max_chars,
   return input.substr(0, keep_bytes) + "…";
 }
 
+#if defined(_WIN32) || defined(__linux__)
 // UI-thread only, activated by a native CEF tab-title press. Never monitor
 // mouse position in the background or when no tab gesture is active.
 bool ReadNativeDragPointer(CefPoint* out, bool* left_held) {
@@ -257,6 +258,8 @@ bool ReadNativeDragPointer(CefPoint* out, bool* left_held) {
   return false;
 #endif
 }
+
+#endif  // _WIN32 || __linux__ native input only
 
 void SetX11WindowClass(CefRefPtr<CefWindow> window) {
 #if defined(__linux__)
@@ -1145,6 +1148,7 @@ void AppController::CycleTab(int delta) {
 }
 
 void AppController::BeginTabDrag(CefRefPtr<CefButton> button) {
+#if defined(_WIN32) || defined(__linux__)
   CEF_REQUIRE_UI_THREAD();
   if (!button || tab_drag_.pressed || closing_ || !window_ ||
       window_->IsClosed() || tabs_.size() < 2) return;
@@ -1167,6 +1171,9 @@ void AppController::BeginTabDrag(CefRefPtr<CefButton> button) {
   CefPostDelayedTask(TID_UI, base::BindOnce([]() {
     if (auto* owner = AppController::Get()) owner->PollTabDrag();
   }), 20);
+#else
+  (void)button;  // Unsupported platform: native gesture disabled.
+#endif
 }
 
 int AppController::TabUnderPointer(const CefPoint& point) const {
@@ -1182,6 +1189,7 @@ int AppController::TabUnderPointer(const CefPoint& point) const {
 }
 
 void AppController::PollTabDrag() {
+#if defined(_WIN32) || defined(__linux__)
   CEF_REQUIRE_UI_THREAD();
   if (!tab_drag_.pressed) return;
   if (closing_ || !window_ || window_->IsClosed()) {
@@ -1207,6 +1215,9 @@ void AppController::PollTabDrag() {
   SetActiveTabInternal(source_id);
   LOG(WARNING) << "CGWA_NATIVE_TAB_DRAG_REORDER source=" << source_id
                << " target=" << target_id;
+#else
+  tab_drag_.Cancel();
+#endif
 }
 
 void AppController::MoveActiveTab(int direction) {
