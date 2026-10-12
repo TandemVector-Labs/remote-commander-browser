@@ -59,7 +59,9 @@ int main() {
   if (!Check(!drag.Move(500,500) && drag.Release(3)==-1,"cancel")) return 1;
   const int* const identity = tabs[1].browser_resource.get();
   if (!Check(rc_ui::MoveTabTo(tabs,2,3),"multi_target_move")) return 1;
-  if (!Check(tabs[2].id==2 && tabs[2].browser_resource.get()==identity,"multi_move_retains_browser")) return 1;
+  const int* const relocated_browser = tabs[2].browser_resource.get();
+  const bool same_browser_identity = relocated_browser == identity;
+  if (!Check(tabs[2].id==2 && same_browser_identity,"multi_move_retains_browser")) return 1;
   if (!Check(rc_ui::MoveTabTo(tabs,2,1),"reverse_move")) return 1;
   if (!Check(tabs[0].id==2 && tabs[0].browser_resource.get()==identity,"reverse_identity")) return 1;
   if (!Check(!rc_ui::MoveTabTo(tabs,2,2),"same_target")) return 1;
