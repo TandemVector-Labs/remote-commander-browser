@@ -84,3 +84,10 @@ test('R247 native drag is scoped to title CEF state and live OS mouse, never pag
  assert.match(controller,/tab_drag_\.Cancel\(\)/);
  assert.doesNotMatch(controller,/DeleteAllCookies|clearBrowsingData|--disable-web-security|--no-sandbox/);
 });
+
+test('R249 native drag guards compare the actual CEF View identity, not C++ wrapper pointers',()=>{
+ assert.match(controller,/title_button->IsSame\(button\)/);
+ assert.match(controller,/if \(!tab \|\| tab->closing \|\| !same_title_view\) return;/);
+ assert.doesNotMatch(controller,/title_button != button/);
+ assert.match(controller,/CGWA_NATIVE_DRAG_DIAG stage=source/);
+});

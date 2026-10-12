@@ -1177,12 +1177,17 @@ void AppController::BeginTabDrag(CefRefPtr<CefButton> button) {
 #endif
   const int source_id = button->GetID() - kTabButtonBase;
   const Tab* tab = FindTabById(source_id);
+  // CefRefPtr wrapper identity is not CEF View identity. The hosted X11
+  // press callback and tracked title had matching stable IDs but different
+  // wrapper pointers. Keep fail-closed same-underlying-view verification.
+  const bool same_title_view = tab && tab->title_button &&
+                               tab->title_button->IsSame(button);
   if (NativeDragDiagnosticEnabled())
     LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=source source=" << source_id
                  << " found=" << static_cast<bool>(tab)
                  << " closing=" << (tab ? tab->closing : true)
-                 << " sameTitle=" << (tab ? tab->title_button == button : false);
-  if (!tab || tab->closing || tab->title_button != button) return;
+                 << " sameCEFView=" << same_title_view;
+  if (!tab || tab->closing || !same_title_view) return;
   CefPoint pointer;
   bool held = false;
   const bool sampled = ReadNativeDragPointer(&pointer, &held);
