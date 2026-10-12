@@ -71,3 +71,16 @@ test('R114 tab-X defers callback-time native view destruction',()=>{
  assert.match(controller,/CGWA_UI_TAB_CLOSE_SELFTEST/);
  assert.match(header,/BackgroundUiTabCloseSelfTestVerify/);
 });
+
+test('R247 native drag is scoped to title CEF state and live OS mouse, never page injection',()=>{
+ assert.match(controller,/ReadNativeDragPointer/);
+ assert.match(controller,/GetAsyncKeyState\(VK_LBUTTON\)/);
+ assert.match(controller,/XQueryPointer\(/);
+ assert.match(controller,/state == CEF_BUTTON_STATE_PRESSED\) BeginTabDrag\(button\)/);
+ assert.match(controller,/CefDisplay::ConvertScreenPointFromPixels/);
+ assert.match(controller,/TabUnderPointer\(pointer\)/);
+ assert.match(controller,/rc_ui::MoveTabTo\(tabs_, source_id, target_id\)/);
+ assert.match(controller,/SetActiveTabInternal\(source_id\)/);
+ assert.match(controller,/tab_drag_\.Cancel\(\)/);
+ assert.doesNotMatch(controller,/DeleteAllCookies|clearBrowsingData|--disable-web-security|--no-sandbox/);
+});

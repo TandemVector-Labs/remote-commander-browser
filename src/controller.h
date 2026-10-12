@@ -1,4 +1,5 @@
 #pragma once
+#include "ui_tab_drag.h"
 
 #include <map>
 #include <string>
@@ -42,6 +43,9 @@ class AppController {
   void RequestCloseWindow();
   void CycleTab(int delta);
   void MoveActiveTab(int direction);
+  void BeginTabDrag(CefRefPtr<CefButton> button);
+  void PollTabDrag();
+  int TabUnderPointer(const CefPoint& point) const;
 
   void OnWindowCreated(CefRefPtr<CefWindow> window);
   void OnWindowBoundsChanged(const CefRect& new_bounds);
@@ -141,6 +145,7 @@ class AppController {
   std::vector<Tab> tabs_;
   int next_tab_id_ = 1;
   int active_tab_id_ = 0;
+  rc_ui::TabDragIntent tab_drag_;
   bool fullscreen_ = false;
   bool companion_visible_ = false;
   bool companion_tick_scheduled_ = false;

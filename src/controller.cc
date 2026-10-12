@@ -29,6 +29,8 @@
 #include "client.h"
 #include "ui_chrome_layout.h"
 #include "ui_tab_order.h"
+#include "ui_tab_drag.h"
+#include "include/views/cef_display.h"
 #include "ui_chrome_palette.h"
 #include "include/base/cef_bind.h"
 #include "include/base/cef_callback.h"
@@ -225,6 +227,35 @@ std::string Utf8Ellipsize(const std::string& input, size_t max_chars,
   if (chars <= max_chars) return input;
   if (keep_bytes > input.size()) keep_bytes = input.size();
   return input.substr(0, keep_bytes) + "…";
+}
+
+// UI-thread only, activated by a native CEF tab-title press. Never monitor
+// mouse position in the background or when no tab gesture is active.
+bool ReadNativeDragPointer(CefPoint* out, bool* left_held) {
+  if (!out || !left_held) return false;
+#if defined(_WIN32)
+  POINT p{};
+  if (!GetCursorPos(&p)) return false;
+  *left_held = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+  *out = CefDisplay::ConvertScreenPointFromPixels(CefPoint(p.x, p.y));
+  return true;
+#elif defined(__linux__)
+  Display* display = XOpenDisplay(nullptr);
+  if (!display) return false;  // Wayland without Xwayland: fail closed.
+  ::Window root_ret = 0, child_ret = 0;
+  int root_x=0, root_y=0, window_x=0, window_y=0;
+  unsigned int mask=0;
+  const Bool ok = XQueryPointer(display, DefaultRootWindow(display),
+                 &root_ret, &child_ret, &root_x, &root_y,
+                 &window_x, &window_y, &mask);
+  XCloseDisplay(display);
+  if (!ok) return false;
+  *left_held = (mask & Button1Mask) != 0;
+  *out = CefPoint(root_x, root_y); // X11 logical coords, scale=1 checked below.
+  return true;
+#else
+  return false;
+#endif
 }
 
 void SetX11WindowClass(CefRefPtr<CefWindow> window) {
@@ -1113,6 +1144,71 @@ void AppController::CycleTab(int delta) {
   SetActiveTabInternal(tabs_[index].id);
 }
 
+void AppController::BeginTabDrag(CefRefPtr<CefButton> button) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!button || tab_drag_.pressed || closing_ || !window_ ||
+      window_->IsClosed() || tabs_.size() < 2) return;
+  // On X11 the native root coordinates equal CEF DIPs only at scale 1.
+  // Fail closed at fractional-scale Wayland/Xwayland instead of misdropping.
+#if defined(__linux__)
+  const auto display = window_->GetDisplay();
+  if (!display || display->GetDeviceScaleFactor() != 1.0f) return;
+#endif
+  const int source_id = button->GetID() - kTabButtonBase;
+  const Tab* tab = FindTabById(source_id);
+  if (!tab || tab->closing || tab->title_button != button) return;
+  CefPoint pointer;
+  bool held = false;
+  if (!ReadNativeDragPointer(&pointer, &held) || !held) return;
+  const CefRect r = button->GetBoundsInScreen();
+  if (!rc_ui::TabTitleContains(pointer.x, pointer.y, r.x, r.y,
+                               r.width, r.height)) return;
+  if (!tab_drag_.Begin(source_id, pointer.x, pointer.y)) return;
+  CefPostDelayedTask(TID_UI, base::BindOnce([]() {
+    if (auto* owner = AppController::Get()) owner->PollTabDrag();
+  }), 20);
+}
+
+int AppController::TabUnderPointer(const CefPoint& point) const {
+  for (const auto& tab : tabs_) {
+    if (tab.closing || !tab.title_button || !tab.title_button->IsVisible())
+      continue;
+    const CefRect r = tab.title_button->GetBoundsInScreen();
+    if (rc_ui::TabTitleContains(point.x, point.y, r.x, r.y,
+                                r.width, r.height))
+      return tab.id;
+  }
+  return -1;
+}
+
+void AppController::PollTabDrag() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!tab_drag_.pressed) return;
+  if (closing_ || !window_ || window_->IsClosed()) {
+    tab_drag_.Cancel(); return;
+  }
+  CefPoint pointer;
+  bool held = false;
+  if (!ReadNativeDragPointer(&pointer, &held)) {
+    tab_drag_.Cancel(); return;
+  }
+  if (held) {
+    tab_drag_.Observe(pointer.x, pointer.y);
+    CefPostDelayedTask(TID_UI, base::BindOnce([]() {
+      if (auto* owner = AppController::Get()) owner->PollTabDrag();
+    }), 20);
+    return;
+  }
+  const int target_id = TabUnderPointer(pointer);
+  const int source_id = tab_drag_.Complete(target_id);
+  if (source_id < 0 || !rc_ui::MoveTabTo(tabs_, source_id, target_id))
+    return;  // Cancelled gesture, outside strip, or closed tab: no mutation.
+  // Defer until native button callback has exited; keep BrowserViews unchanged.
+  SetActiveTabInternal(source_id);
+  LOG(WARNING) << "CGWA_NATIVE_TAB_DRAG_REORDER source=" << source_id
+               << " target=" << target_id;
+}
+
 void AppController::MoveActiveTab(int direction) {
   CEF_REQUIRE_UI_THREAD();
   if (closing_ || !window_ || window_->IsClosed()) return;
@@ -1196,6 +1292,7 @@ void AppController::Minimize() {
 void AppController::BeginShutdown() {
   CEF_REQUIRE_UI_THREAD();
   if (closing_) return;
+  tab_drag_.Cancel();
 
   SaveSessionState();
   closing_ = true;
@@ -1287,6 +1384,8 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
     return;
   }
   const auto state = button->GetState();
+  if (id >= kTabButtonBase && id < kTabCloseBase &&
+      state == CEF_BUTTON_STATE_PRESSED) BeginTabDrag(button);
   const bool hot = state == CEF_BUTTON_STATE_HOVERED ||
                    state == CEF_BUTTON_STATE_PRESSED;
 
@@ -1567,6 +1666,7 @@ bool AppController::OpenExternal(const std::string& url) {
 
 void AppController::OnWindowDestroyed() {
   CEF_REQUIRE_UI_THREAD();
+  tab_drag_.Cancel();
   LOG(WARNING) << "CGWA_SHUTDOWN WINDOW_DESTROYED";
   tabs_.clear();
   window_ = nullptr;
