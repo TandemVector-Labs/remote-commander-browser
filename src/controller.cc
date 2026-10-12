@@ -1158,16 +1158,30 @@ void AppController::BeginTabDrag(CefRefPtr<CefButton> button) {
     LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=try id="
                  << (button ? button->GetID() : -1) << " count=" << tabs_.size()
                  << " closing=" << closing_ << " active=" << tab_drag_.pressed;
-  if (!button || tab_drag_.pressed || closing_ || !window_ ||
-      window_->IsClosed() || tabs_.size() < 2) return;
+  const bool guarded = !button || tab_drag_.pressed || closing_ ||
+      !window_ || window_->IsClosed() || tabs_.size() < 2;
+  if (NativeDragDiagnosticEnabled())
+    LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=pre_guard blocked=" << guarded
+                 << " hasWindow=" << static_cast<bool>(window_)
+                 << " windowClosed=" << (window_ ? window_->IsClosed() : true);
+  if (guarded) return;
   // On X11 the native root coordinates equal CEF DIPs only at scale 1.
   // Fail closed at fractional-scale Wayland/Xwayland instead of misdropping.
 #if defined(__linux__)
   const auto display = window_->GetDisplay();
+  if (NativeDragDiagnosticEnabled())
+    LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=display present="
+                 << static_cast<bool>(display) << " scale="
+                 << (display ? display->GetDeviceScaleFactor() : 0.0f);
   if (!display || display->GetDeviceScaleFactor() != 1.0f) return;
 #endif
   const int source_id = button->GetID() - kTabButtonBase;
   const Tab* tab = FindTabById(source_id);
+  if (NativeDragDiagnosticEnabled())
+    LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=source source=" << source_id
+                 << " found=" << static_cast<bool>(tab)
+                 << " closing=" << (tab ? tab->closing : true)
+                 << " sameTitle=" << (tab ? tab->title_button == button : false);
   if (!tab || tab->closing || tab->title_button != button) return;
   CefPoint pointer;
   bool held = false;
