@@ -129,6 +129,29 @@ class ReleaseIntegrityTests(unittest.TestCase):
         )[0]
         self.assertNotIn("if($LASTEXITCODE -ne 0)", stage)
 
+    def test_r256_sigstore_provenance_is_fail_closed_before_browser_release(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        assert "permissions:\n  contents: read\n" in workflow
+        publish = workflow.split("\n  publish:\n", 1)[1]
+        for marker in ("if: github.event_name != 'pull_request'",
+                       "needs: [windows, linux, release-contract]",
+                       "contents: write", "id-token: write",
+                       "attestations: write", "artifact-metadata: write",
+                       "R256_RELEASE_PREATTEST_INTEGRITY_PASS",
+                       "uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+                       "subject-path: 'dist/release/*'",
+                       "gh attestation verify",
+                       "R256_RELEASE_SIGNED_ATTESTATION_PASS subjects=",
+                       'test "$verified" -eq 7'):
+            self.assertIn(marker, publish)
+        self.assertLess(publish.index("R256_RELEASE_PREATTEST_INTEGRITY_PASS"),
+                        publish.index("uses: actions/attest@"))
+        self.assertLess(publish.index("uses: actions/attest@"),
+                        publish.index("gh attestation verify"))
+        self.assertLess(publish.index("gh attestation verify"),
+                        publish.index("gh release create"))
+        self.assertNotIn("continue-on-error: true", publish)
+
     @unittest.skipUnless(os.name == "posix", "native Linux package execution")
     def test_actual_packager_checksum_is_portable(self):
         fixture = self.root / "project with spaces"
