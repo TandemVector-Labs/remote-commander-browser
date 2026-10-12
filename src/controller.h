@@ -41,6 +41,7 @@ class AppController {
   void Minimize();
   void RequestCloseWindow();
   void CycleTab(int delta);
+  void MoveActiveTab(int direction);
 
   void OnWindowCreated(CefRefPtr<CefWindow> window);
   void OnWindowBoundsChanged(const CefRect& new_bounds);

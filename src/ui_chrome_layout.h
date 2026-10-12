@@ -14,7 +14,7 @@ struct TabWindow {
 inline TabWindow SelectTabs(int logical_width, int count, int active) {
   const int total = std::max(0, count);
   const int width = std::max(0, logical_width);
-  const int chrome_reserved = width < 900 ? 384 : 620;
+  const int chrome_reserved = width < 900 ? 464 : 700; // Includes two 40-DIP tab-order buttons.
   const int capacity = std::clamp((width - chrome_reserved) / 171, 1, 4);
   if (!total) return {0, 0, capacity};
   const int visible = std::min(total, capacity);
