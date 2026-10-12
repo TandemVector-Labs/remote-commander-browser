@@ -1,3 +1,10 @@
+## 0.8.2 — candidate, not yet released (2026-10-10)
+
+- R31 responsive native CEF toolbar, accessible tab selector and correctly bounded Companion panel.
+- Preserve eight-tab model, existing ChatGPT login/profile, exact-origin permissions and sandbox.
+- 225-step native MSVC build; standalone native layout matrix and 5 source tests PASS; hosted Windows/Linux CI PASS.
+- Do not release/auto-install until Native owner visual, code signing, install/uninstall/rollback and four-host acceptance gates pass. Earlier 0.8.1 release remains immutable and authoritative for installed users.
+
 ## 0.8.0 - 2026-10-06
 
 - Promote the rc.9-qualified runtime and release-integrity hardening to stable.
@@ -28,7 +35,6 @@ Version the Saeid native companion and V03 source snapshots with explicit incomp
 - Unified active-tab visual updates through one canonical update path.
 - Removed a shadowed local variable and standardized tab lookup.
 - Kept Linux Chromium sandbox enabled and validated.
-- Kept permission trust checks boundary-safe and exact-origin based.
 
 ### Validated
 - Login/session persistence

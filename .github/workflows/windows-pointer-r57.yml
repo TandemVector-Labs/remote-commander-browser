@@ -1,0 +1,65 @@
+name: Windows Browser transactional pointer R57
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/install-windows.ps1'
+      - 'test/windows-rollback-ci-r57.ps1'
+      - 'test/windows-pointer-static-r57.test.mjs'
+      - '.github/workflows/windows-pointer-r57.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rollback:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify installer parser
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/install-windows.ps1),[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -ne 0){throw 'INSTALLER_PARSE_FAILED'}
+      - name: Synthetic Windows junction swap / rollback fault injection
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -File test/windows-rollback-ci-r57.ps1
+      - name: Run safety source regressions
+        run: node --test test/windows-pointer-static-r57.test.mjs
+      - name: Independently verify isolated rollback attestation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $report='test/SWAP_RESULT_CI_R57.json'
+          if(-not(Test-Path -LiteralPath $report -PathType Leaf)){throw 'R57_ATTESTATION_MISSING'}
+          $receipt=Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if($receipt.status -cne 'PASS_ISOLATED_WINDOWS_BROWSER_VERSION_SWAP_AND_ROLLBACK' -or
+             $receipt.productionBrowserPointerUntouched -ne $true -or
+             $receipt.installedProductionChanged -ne $false -or
+             $receipt.credentialsAccessed -ne $false -or
+             $receipt.ownerDesktopTouched -ne $false -or
+             $receipt.publicReleaseSigned -ne $false -or
+             $receipt.nativeOwnerAcceptance -cne 'OPEN'){
+            throw 'R57_ATTESTATION_CONTENT_FAILED'
+          }
+          $sha=(Get-FileHash -LiteralPath $report -Algorithm SHA256).Hash.ToLowerInvariant()
+          "R57_SCOPED_WINDOWS_ROLLBACK_ATTESTATION_SHA256=$sha" | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          'R57_SCOPED_ATTESTATION_VALIDATED_NOT_PUBLIC_RELEASE'
+      - name: Preserve isolated rollback receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: r57-isolated-windows-rollback-attestation
+          path: test/SWAP_RESULT_CI_R57.json
+          if-no-files-found: error
+          retention-days: 30
+  portable-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify portable source policy
+        run: node --test test/windows-pointer-static-r57.test.mjs

@@ -1,4 +1,5 @@
 #pragma once
+#include "ui_tab_drag.h"
 
 #include <map>
 #include <string>
@@ -32,12 +33,19 @@ class AppController {
   void NewTab(const std::string& url = "https://chatgpt.com/");
   void ActivateTab(int tab_id);
   void CloseTab(int tab_id);
+  void QueueTabClose(int tab_id);
   void CloseActiveTab();
   void ToggleFullscreen();
+  void ToggleTheme();
+  void ApplyNativeTheme();
   void ToggleMaximize();
   void Minimize();
   void RequestCloseWindow();
   void CycleTab(int delta);
+  void MoveActiveTab(int direction);
+  void BeginTabDrag(CefRefPtr<CefButton> button);
+  void PollTabDrag();
+  int TabUnderPointer(const CefPoint& point) const;
 
   void OnWindowCreated(CefRefPtr<CefWindow> window);
   void OnWindowBoundsChanged(const CefRect& new_bounds);
@@ -102,6 +110,8 @@ class AppController {
   void RunBackgroundSelfTest();
   void BackgroundSelfTestClose();
   void BackgroundSelfTestVerify();
+  void BackgroundLastTabSelfTestVerify();
+  void BackgroundUiTabCloseSelfTestVerify();
   void BeginShutdown();
   void FinalizeShutdown();
   std::string ShortTitle(const std::string& title) const;
@@ -116,6 +126,9 @@ class AppController {
   CefRefPtr<CefOverlayController> companion_overlay_;
   std::vector<CefRefPtr<CefLabelButton>> companion_rows_;
   std::vector<CefRefPtr<CefLabelButton>> header_buttons_;
+  CefRefPtr<CefLabelButton> tab_switcher_button_;
+  CefRefPtr<CefLabelButton> theme_button_;
+  int visible_tab_capacity_ = -1;
   companion::Monitor companion_monitor_;
   companion::Observation companion_observation_;
   companion::NativeBinding companion_binding_;
@@ -132,6 +145,7 @@ class AppController {
   std::vector<Tab> tabs_;
   int next_tab_id_ = 1;
   int active_tab_id_ = 0;
+  rc_ui::TabDragIntent tab_drag_;
   bool fullscreen_ = false;
   bool companion_visible_ = false;
   bool companion_tick_scheduled_ = false;
@@ -140,4 +154,6 @@ class AppController {
   int self_test_tab_id_ = 0;
   int self_test_browser_id_ = -1;
   size_t self_test_base_tabs_ = 0;
+  int self_test_last_closed_tab_id_ = 0;
+  int self_test_last_replacement_tab_id_ = 0;
 };
