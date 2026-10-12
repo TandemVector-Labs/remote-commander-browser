@@ -53,7 +53,7 @@ int main() {
   std::vector<DragTab> held;
   for (int i=0; i<4; ++i)
     held.push_back(DragTab{i,false,std::make_unique<Resource>(Resource{i})});
-  Resource& original = *held[1].browser;
+  const Resource& original = *held[1].browser;
   if (!Check(rc_ui::MoveTabTo(held,1,3),"native_multi_move")) return 1;
   held[3].browser->marker = 879;
   if (!Check(original.marker==879,"native_browser_lifetime")) return 1;
