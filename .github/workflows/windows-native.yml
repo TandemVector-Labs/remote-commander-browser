@@ -14,11 +14,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: CEF-free native UI source, Theme and tab-X contract
+        run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
 
       - name: Verify preview version
         shell: pwsh
         run: |
-          if((Get-Content VERSION -Raw).Trim() -ne '0.8.1'){ throw 'VERSION mismatch' }
+          if((Get-Content VERSION -Raw).Trim() -ne '0.8.3-rc.2'){ throw 'VERSION mismatch' }
 
       - name: Companion contract tests (CEF-free)
         shell: pwsh
@@ -126,10 +128,10 @@ jobs:
           if($p.ExitCode -ne 0){ throw "native exit=$($p.ExitCode)" }
           if(!(Test-Path $log)){ throw 'native log missing' }
           $text=Get-Content -LiteralPath $log -Raw
-          foreach($marker in @('CGWA_COMPANION_SELFTEST PASS','CGWA_SELFTEST PASS','CGWA_SHUTDOWN FINALIZE','CGWA_SHUTDOWN WINDOW_DESTROYED')){
+          foreach($marker in @('CGWA_COMPANION_SELFTEST PASS','CGWA_SELFTEST PASS','CGWA_LAST_TAB_SELFTEST PASS','CGWA_UI_TAB_CLOSE_SELFTEST PASS','CGWA_THEME_SELFTEST PASS','CGWA_SHUTDOWN FINALIZE','CGWA_SHUTDOWN WINDOW_DESTROYED')){
             if(-not $text.Contains($marker)){ throw "missing marker: $marker" }
           }
-          if($text -match 'CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|FATAL|stack smashing'){ throw 'native failure marker present' }
+          if($text -match 'CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL|FATAL|stack smashing'){ throw 'native failure marker present' }
           Write-Output 'WINDOWS_NATIVE_LIFECYCLE_PASS'
 
       - name: Package Windows preview
@@ -152,7 +154,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $setup=(Resolve-Path 'dist/installer/Remote-Commander-Browser-Setup-v0.8.1.exe').Path
+          $setup=(Resolve-Path 'dist/installer/Remote-Commander-Browser-Setup-v0.8.3-rc.2.exe').Path
           $root=Join-Path $env:RUNNER_TEMP 'rc-browser-setup-qa'
           $install=Join-Path $root 'browser'
           $companion=Join-Path $root 'companion'
@@ -176,17 +178,17 @@ jobs:
           if(-not(Test-Path $exe -PathType Leaf)){ throw 'BROWSER_SETUP_EXE_MISSING' }
           if(-not(Test-Path $record -PathType Leaf)){ throw 'BROWSER_SETUP_RECORD_MISSING' }
           $json=Get-Content $record -Raw|ConvertFrom-Json
-          if($json.version -ne '0.8.1' -or $json.publicIntegration -ne $false){ throw 'BROWSER_SETUP_RECORD_INVALID' }
+          if($json.version -ne '0.8.3-rc.2' -or $json.publicIntegration -ne $false){ throw 'BROWSER_SETUP_RECORD_INVALID' }
           $acl=Get-Acl $companion
           if(-not$acl.AreAccessRulesProtected){ throw 'BROWSER_SETUP_COMPANION_ACL_INVALID' }
           Write-Output 'BROWSER_SETUP_ISOLATED_PASS'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-commander-browser-v0.8.1-windows-x86_64
+          name: remote-commander-browser-v0.8.3-rc.2-windows-x86_64
           path: |
-            dist/remote-commander-browser-v0.8.1-windows-x86_64.zip
-            dist/SHA256SUMS-windows-v0.8.1.txt
+            dist/remote-commander-browser-v0.8.3-rc.2-windows-x86_64.zip
+            dist/SHA256SUMS-windows-v0.8.3-rc.2.txt
           if-no-files-found: error
 
 
@@ -195,6 +197,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: CEF-free native UI source, Theme and tab-X contract
+        run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
 
       - name: Install Linux build dependencies
         run: |
@@ -234,14 +238,17 @@ jobs:
           cp "$profile/chrome_debug.log" .qa/native-linux-chrome.log
           grep -q 'CGWA_COMPANION_SELFTEST PASS' .qa/native-linux-chrome.log
           grep -q 'CGWA_SELFTEST PASS' .qa/native-linux-chrome.log
+          grep -q 'CGWA_LAST_TAB_SELFTEST PASS' .qa/native-linux-chrome.log
+          grep -q 'CGWA_THEME_SELFTEST PASS' .qa/native-linux-chrome.log
+          grep -q 'CGWA_UI_TAB_CLOSE_SELFTEST PASS' .qa/native-linux-chrome.log
           grep -q 'CGWA_SHUTDOWN FINALIZE' .qa/native-linux-chrome.log
           grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' .qa/native-linux-chrome.log
-          ! grep -Eq 'FATAL|GPU process isn.t usable|segfault|stack smashing|trap|CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL' .qa/native-linux-chrome.log
+          ! grep -Eq 'FATAL|GPU process isn.t usable|segfault|stack smashing|trap|CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL' .qa/native-linux-chrome.log
           sha256sum build/bin/chatgpt-cef-v2 | tee build/BINARY_SHA256-linux.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-commander-browser-v0.8.1-linux-x86_64
+          name: remote-commander-browser-v0.8.3-rc.2-linux-x86_64
           path: |
             build/bin/
             build/BINARY_SHA256-linux.txt

@@ -4,7 +4,9 @@ param(
   [string]$VersionOverride = '',
   [string]$LogoPath = '',
   [string]$CompanionRoot = '',
-  [switch]$NoPublicIntegration
+  [switch]$NoPublicIntegration,
+  [ValidateSet('None','AfterBaselineMove','AfterCandidateMove')]
+  [string]$TestFailurePoint = 'None'
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -48,6 +50,16 @@ $VersionDir=Join-Path $InstallRoot (("v"+$Version+"-")+$PackageSha.Substring(0,1
 $Current=Join-Path $InstallRoot 'current'
 $StartMenu=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Remote Commander'
 $Reg='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RemoteCommanderBrowser'
+# Fault injection is only permitted in this isolated source repository's
+# NoPublicIntegration test fixtures. It cannot affect a live public install.
+if($TestFailurePoint -ne 'None'){
+  $fixtureRoot=[IO.Path]::GetFullPath((Join-Path $RepoRoot 'test\swap-r57'))
+  $fixturePrefix=$fixtureRoot.TrimEnd([char]92)+[IO.Path]::DirectorySeparatorChar
+  if((-not $NoPublicIntegration) -or
+     (-not $InstallRoot.StartsWith($fixturePrefix,[StringComparison]::OrdinalIgnoreCase))){
+    throw 'R57_FAULT_INJECTION_RESTRICTED_TO_PRIVATE_TEST_ROOT'
+  }
+}
 
 function Test-PrivateDirectoryAcl([string]$Path) {
   if(-not(Test-Path -LiteralPath $Path -PathType Container)){return $false}
@@ -131,17 +143,49 @@ function Ensure-PrivateDirectory([string]$Path) {
     throw 'BROWSER_COMPANION_ACL_VERIFY_FAILED'
   }
 }
-Ensure-PrivateDirectory $CompanionRoot
-
-New-Item -ItemType Directory -Force -Path $VersionDir | Out-Null
-Copy-Item -Path (Join-Path $SourceDir '*') -Destination $VersionDir -Recurse -Force -ErrorAction Stop
-if($LogoPath -and (Test-Path -LiteralPath $LogoPath -PathType Leaf)){
-  Copy-Item -LiteralPath $LogoPath -Destination (Join-Path $VersionDir 'remote-commander-browser-logo.png') -Force
+# Fail before touching existing executable/junction on any unrecognized Current.
+$priorCurrent=Get-Item -LiteralPath $Current -Force -ErrorAction SilentlyContinue
+$priorTarget=''
+if($null -ne $priorCurrent){
+  if($priorCurrent.LinkType -cne 'Junction'){throw 'BROWSER_CURRENT_NOT_A_JUNCTION'}
+  $priorTarget=[IO.Path]::GetFullPath([string](@($priorCurrent.Target)[0]))
+  $childPrefix=$InstallRoot.TrimEnd([char]92)+[IO.Path]::DirectorySeparatorChar
+  if((-not $priorTarget.StartsWith($childPrefix,[StringComparison]::OrdinalIgnoreCase)) -or
+     (-not(Test-Path -LiteralPath $priorTarget -PathType Container))){
+    throw 'BROWSER_CURRENT_TARGET_OUTSIDE_VERSION_ROOT'
+  }
 }
-
-if(Test-Path -LiteralPath $Current){Remove-Item -LiteralPath $Current -Force -Recurse}
-New-Item -ItemType Junction -Path $Current -Target $VersionDir | Out-Null
-
+$stage=Join-Path $InstallRoot ('.stage-v'+$Version+'-'+$PackageSha.Substring(0,12))
+$pending=Join-Path $InstallRoot ('current.pending-'+$PackageSha.Substring(0,12))
+$rollback=Join-Path $InstallRoot ('current.rollback-'+$PackageSha.Substring(0,12))
+$failed=Join-Path $InstallRoot ('current.failed-'+$PackageSha.Substring(0,12))
+foreach($p in @($VersionDir,$stage,$pending,$rollback,$failed)){
+  if($null -ne (Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue)){
+    throw ('BROWSER_EXACT_VERSION_OR_SWAP_PATH_ALREADY_EXISTS_'+$p)
+  }
+}
+# The candidate is a new, immutable version directory; never copy onto
+# an installed baseline. Its complete file list and SHA must match SourceDir.
+New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $stage -ErrorAction Stop | Out-Null
+Copy-Item -Path (Join-Path $SourceDir '*') -Destination $stage -Recurse -ErrorAction Stop
+$copyEntries=Get-ChildItem -LiteralPath $stage -File -Recurse | ForEach-Object {
+  $rel=[IO.Path]::GetRelativePath($stage,$_.FullName).Replace('\','/')
+  $hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+  "$rel|$hash"
+} | Sort-Object
+if(($copyEntries -join [char]10) -cne $Manifest){throw 'BROWSER_STAGED_PAYLOAD_SHA_OR_MEMBER_MISMATCH'}
+if($LogoPath -and (Test-Path -LiteralPath $LogoPath -PathType Leaf)){
+  $targetLogo=Join-Path $stage 'remote-commander-browser-logo.png'
+  if(Test-Path -LiteralPath $targetLogo){
+    if((Get-FileHash $targetLogo -Algorithm SHA256).Hash -cne
+       (Get-FileHash $LogoPath -Algorithm SHA256).Hash){
+      throw 'BROWSER_STAGE_LOGO_COLLISION'
+    }
+  }else{
+    Copy-Item -LiteralPath $LogoPath -Destination $targetLogo -ErrorAction Stop
+  }
+}
 $installRecord=[ordered]@{
   schema=1
   product='Remote Commander Browser'
@@ -151,7 +195,62 @@ $installRecord=[ordered]@{
   companionRoot=$CompanionRoot
   publicIntegration=(-not $NoPublicIntegration)
 }
-[IO.File]::WriteAllText((Join-Path $VersionDir 'product-install.json'),(($installRecord|ConvertTo-Json -Depth 5)+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText((Join-Path $stage 'product-install.json'),
+  (($installRecord|ConvertTo-Json -Depth 5)+[Environment]::NewLine),
+  [Text.UTF8Encoding]::new($false))
+Move-Item -LiteralPath $stage -Destination $VersionDir -ErrorAction Stop
+$expectedExe=(Get-FileHash -LiteralPath $SourceExe -Algorithm SHA256).Hash.ToLowerInvariant()
+if((Get-FileHash -LiteralPath (Join-Path $VersionDir 'chatgpt-cef-v2.exe') -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedExe){
+  throw 'BROWSER_COMMITTED_VERSION_EXE_SHA_DRIFT'
+}
+Ensure-PrivateDirectory $CompanionRoot
+
+# Stage the replacement link first. The old Current is moved to a
+# preserved rollback alias, never deleted or recursively traversed.
+New-Item -ItemType Junction -Path $pending -Target $VersionDir -ErrorAction Stop | Out-Null
+$baselineMoved=$false
+try{
+  if($null -ne $priorCurrent){
+    Move-Item -LiteralPath $Current -Destination $rollback -ErrorAction Stop
+    $baselineMoved=$true
+  }
+  if($TestFailurePoint -eq 'AfterBaselineMove'){
+    throw 'R57_SYNTHETIC_FAILURE_AFTER_BASELINE_MOVE'
+  }
+  Move-Item -LiteralPath $pending -Destination $Current -ErrorAction Stop
+  if($TestFailurePoint -eq 'AfterCandidateMove'){
+    throw 'R57_SYNTHETIC_FAILURE_AFTER_CANDIDATE_MOVE'
+  }
+  $newCurrent=Get-Item -LiteralPath $Current -Force -ErrorAction Stop
+  if($newCurrent.LinkType -cne 'Junction' -or
+     [IO.Path]::GetFullPath([string](@($newCurrent.Target)[0])) -cne $VersionDir){
+    throw 'BROWSER_NEW_CURRENT_POINTER_VERIFY_FAILED'
+  }
+}catch{
+  $originalError=$_.Exception.Message
+  try{
+    $candidateCurrent=Get-Item -LiteralPath $Current -Force -ErrorAction SilentlyContinue
+    if($null -ne $candidateCurrent){
+      if($candidateCurrent.LinkType -cne 'Junction' -or
+         [IO.Path]::GetFullPath([string](@($candidateCurrent.Target)[0])) -cne $VersionDir){
+        throw 'UNEXPECTED_CURRENT_LINK_DURING_ROLLBACK'
+      }
+      Move-Item -LiteralPath $Current -Destination $failed -ErrorAction Stop
+    }
+    if($baselineMoved){
+      Move-Item -LiteralPath $rollback -Destination $Current -ErrorAction Stop
+      $restored=Get-Item -LiteralPath $Current -Force -ErrorAction Stop
+      if($restored.LinkType -cne 'Junction' -or
+         [IO.Path]::GetFullPath([string](@($restored.Target)[0])) -cne $priorTarget){
+        throw 'RESTORED_BASELINE_POINTER_MISMATCH'
+      }
+    }
+  }catch{
+    throw ('BROWSER_ROLLBACK_UNRESOLVED_OR_DEGRADED: '+$_.Exception.Message+
+      '; original='+$originalError)
+  }
+  throw ('BROWSER_SWAP_ABORTED_AND_BASELINE_PRESERVED: '+$originalError)
+}
 
 if(-not $NoPublicIntegration){
   New-Item -ItemType Directory -Force -Path $StartMenu | Out-Null
