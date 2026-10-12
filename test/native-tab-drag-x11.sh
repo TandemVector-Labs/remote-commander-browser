@@ -16,6 +16,7 @@ printf 'active=0\nhttps://chatgpt.com/?r247=a\nhttps://chatgpt.com/?r247=b\n' > 
 original="$(sha256sum "$profile/tabs.state" | cut -d' ' -f1)"
 "$exe" --cgwa-profile-dir="$profile" \
   --log-file="$profile/chrome_debug.log" \
+  --native-tab-drag-diagnostic \
   '--host-resolver-rules=MAP * ~NOTFOUND' > "$root/native.stdout" 2>&1 &
 pid=$!
 finish() {
@@ -36,6 +37,7 @@ y0="$(printf '%s\n' "$geometry" | sed -n 's/^Y=\(-\?[0-9]\+\)$/\1/p')"
 [[ "$x" =~ ^-?[0-9]+$ && "$y0" =~ ^-?[0-9]+$ ]] || { echo R247_WINDOW_GEOMETRY_INVALID; exit 37; }
 # Native layout at 1240 DIP: 164-DIP brand then two 135-DIP tab titles.
 sx=$(( x + 210 )); tx=$(( x + 375 )); sy=$(( y0 + 26 ))
+echo "R248_X11_COORDS wid=$wid window=${x},${y0} source=${sx},${sy} target=${tx},${sy}"
 xdotool mousemove --sync "$sx" "$sy"
 sleep 0.1
 xdotool mousedown 1
@@ -44,6 +46,13 @@ xdotool mousemove --sync "$tx" "$sy"
 sleep 0.35
 xdotool mouseup 1
 sleep 0.7
+if [[ -f "$profile/chrome_debug.log" ]]; then
+  echo "R248_NATIVE_TRACE_START"
+  grep -E "CGWA_NATIVE_DRAG_DIAG|CGWA_NATIVE_TAB_DRAG_REORDER" "$profile/chrome_debug.log" | tail -55 || true
+  echo "R248_NATIVE_TRACE_END"
+else
+  echo "R248_NATIVE_LOG_NOT_CREATED"
+fi
 [[ -f "$profile/tabs.state" ]] || { echo R247_STATE_MISSING; exit 38; }
 state="$(sed -n '2,3p' "$profile/tabs.state")"
 expected="$(printf 'https://chatgpt.com/?r247=b\nhttps://chatgpt.com/?r247=a')"

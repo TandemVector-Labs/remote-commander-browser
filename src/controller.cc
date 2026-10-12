@@ -232,6 +232,10 @@ std::string Utf8Ellipsize(const std::string& input, size_t max_chars,
 #if defined(_WIN32) || defined(__linux__)
 // UI-thread only, activated by a native CEF tab-title press. Never monitor
 // mouse position in the background or when no tab gesture is active.
+bool NativeDragDiagnosticEnabled() {
+  const auto cl = CefCommandLine::GetGlobalCommandLine();
+  return cl && cl->HasSwitch("native-tab-drag-diagnostic");
+}
 bool ReadNativeDragPointer(CefPoint* out, bool* left_held) {
   if (!out || !left_held) return false;
 #if defined(_WIN32)
@@ -1150,6 +1154,10 @@ void AppController::CycleTab(int delta) {
 void AppController::BeginTabDrag(CefRefPtr<CefButton> button) {
 #if defined(_WIN32) || defined(__linux__)
   CEF_REQUIRE_UI_THREAD();
+  if (NativeDragDiagnosticEnabled())
+    LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=try id="
+                 << (button ? button->GetID() : -1) << " count=" << tabs_.size()
+                 << " closing=" << closing_ << " active=" << tab_drag_.pressed;
   if (!button || tab_drag_.pressed || closing_ || !window_ ||
       window_->IsClosed() || tabs_.size() < 2) return;
   // On X11 the native root coordinates equal CEF DIPs only at scale 1.
@@ -1163,10 +1171,16 @@ void AppController::BeginTabDrag(CefRefPtr<CefButton> button) {
   if (!tab || tab->closing || tab->title_button != button) return;
   CefPoint pointer;
   bool held = false;
-  if (!ReadNativeDragPointer(&pointer, &held) || !held) return;
+  const bool sampled = ReadNativeDragPointer(&pointer, &held);
   const CefRect r = button->GetBoundsInScreen();
-  if (!rc_ui::TabTitleContains(pointer.x, pointer.y, r.x, r.y,
-                               r.width, r.height)) return;
+  const bool hit = sampled && rc_ui::TabTitleContains(
+      pointer.x, pointer.y, r.x, r.y, r.width, r.height);
+  if (NativeDragDiagnosticEnabled())
+    LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=press_sample ok=" << sampled
+                 << " held=" << held << " hit=" << hit << " pointer="
+                 << pointer.x << "," << pointer.y << " bounds=" << r.x << ","
+                 << r.y << "," << r.width << "," << r.height;
+  if (!sampled || !held || !hit) return;
   if (!tab_drag_.Begin(source_id, pointer.x, pointer.y)) return;
   CefPostDelayedTask(TID_UI, base::BindOnce([]() {
     if (auto* owner = AppController::Get()) owner->PollTabDrag();
@@ -1208,6 +1222,10 @@ void AppController::PollTabDrag() {
     return;
   }
   const int target_id = TabUnderPointer(pointer);
+  if (NativeDragDiagnosticEnabled())
+    LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=release source="
+                 << tab_drag_.source_id << " target=" << target_id
+                 << " moved=" << tab_drag_.moved;
   const int source_id = tab_drag_.Complete(target_id);
   if (source_id < 0 || !rc_ui::MoveTabTo(tabs_, source_id, target_id))
     return;  // Cancelled gesture, outside strip, or closed tab: no mutation.
@@ -1395,6 +1413,12 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
     return;
   }
   const auto state = button->GetState();
+#if defined(_WIN32) || defined(__linux__)
+  if (id >= kTabButtonBase && id < kTabCloseBase &&
+      NativeDragDiagnosticEnabled())
+    LOG(WARNING) << "CGWA_NATIVE_DRAG_DIAG stage=cef_button_state id="
+                 << id << " state=" << static_cast<int>(state);
+#endif
   if (id >= kTabButtonBase && id < kTabCloseBase &&
       state == CEF_BUTTON_STATE_PRESSED) BeginTabDrag(button);
   const bool hot = state == CEF_BUTTON_STATE_HOVERED ||
