@@ -34,7 +34,7 @@ test('companion panel is viewport bounded and never silently hides data as healt
  assert.match(controller,/const bool overflow = static_cast<int>\(rows\.size\(\)\) > slots;/);
  assert.match(controller,/more • enlarge window/);
  assert.match(controller,/SetTooltipText\("Additional local monitor fields/);
- assert.match(controller,/caution \? kDangerText : kText/);
+ assert.match(controller,/caution \? UiPalette\(\)\.dangerText : UiPalette\(\)\.text/);
 });
 test('UI-only patch does not disable sandbox or touch ChatGPT authentication',()=>{
  assert.doesNotMatch(controller,/--no-sandbox|--disable-web-security|DeleteAllCookies|clearBrowsingData/);
@@ -44,9 +44,10 @@ test('UI-only patch does not disable sandbox or touch ChatGPT authentication',()
 });
 
 test('closing only tab replaces it before destroy and keeps top-level window alive',()=>{
- const close=controller.split('void AppController::CloseTab(int tab_id) {')[1]?.split('void AppController::CloseActiveTab()')[0];
+ const close=controller.split('void AppController::CloseTab(int tab_id) {')[1]?.split('void AppController::QueueTabClose(int tab_id) {')[0];
  assert.ok(close);
- assert.doesNotMatch(close,/RequestCloseWindow\(\)/);
+ const executableClose=close.replace(/\/\/[^\r\n]*/g,'');
+ assert.doesNotMatch(executableClose,/RequestCloseWindow\(\)/);
  assert.match(close,/if \(tabs_\.size\(\) == 1\) \{[\s\S]*?NewTab\(\);[\s\S]*?tabs_\.size\(\) != 2/);
  assert.match(close,/it = std::find_if\(tabs_\.begin\(\), tabs_\.end\(\)/);
  assert.match(close,/CGWA_TAB_LAST_REPLACEMENT_FAILED/);

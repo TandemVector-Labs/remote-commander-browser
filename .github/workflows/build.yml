@@ -31,7 +31,7 @@ jobs:
             -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -fno-omit-frame-pointer'
           cmake --build build-companion -j2
       - name: Validate browser Light/Dark theme contrast and source
-        run: node --test test/ui_chrome_theme.test.cjs
+        run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
       - name: Run native contract and Linux private-file guards
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
