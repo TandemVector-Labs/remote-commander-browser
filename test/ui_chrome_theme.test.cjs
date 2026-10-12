@@ -47,7 +47,11 @@ test('R99 first launch without ui-theme.state does not fail symlink privacy guar
  assert.match(controller,/std::filesystem::is_regular_file\(status\)/);
  assert.doesNotMatch(controller,/is_symlink\(std::filesystem::u8path\(path\), error\)/);
 });
-test('R98 theme control reserves logical space at narrow and wide widths',()=>{
- assert.match(layout,/chrome_reserved = width < 900 \? 384 : 620/);
+test('R244 native theme and tab-order controls reserve space on narrow and wide windows',()=>{
+ assert.match(layout,/chrome_reserved = width < 900 \? 464 : 700/);
  assert.match(controller,/SetAccessibleName\("Switch browser theme"\)/);
+ assert.match(controller,/SetAccessibleName\("Move selected tab left"\)/);
+ assert.match(controller,/SetAccessibleName\("Move selected tab right"\)/);
+ assert.match(controller,/SetAccelerator\(kAccelMoveTabLeft, kVKeyPageUp, true, true, false, true\)/);
+ assert.match(controller,/SetAccelerator\(kAccelMoveTabRight, kVKeyPageDown, true, true, false, true\)/);
 });
