@@ -28,6 +28,7 @@
 
 #include "client.h"
 #include "ui_chrome_layout.h"
+#include "ui_tab_order.h"
 #include "ui_chrome_palette.h"
 #include "include/base/cef_bind.h"
 #include "include/base/cef_callback.h"
@@ -51,6 +52,8 @@ constexpr int kCloseWindowButton = 24;
 constexpr int kCompanionButton = 25;
 constexpr int kTabSwitcherButton = 26;
 constexpr int kThemeButton = 27;
+constexpr int kMoveTabLeftButton = 28;
+constexpr int kMoveTabRightButton = 29;
 constexpr int kCompanionRefreshButton = 30;
 constexpr int kCompanionRowBase = 300;
 constexpr int kCompanionRowCount = 18;
@@ -67,6 +70,8 @@ constexpr int kAccelNextTab = 102;
 constexpr int kAccelPrevTab = 103;
 constexpr int kAccelFullscreen = 104;
 constexpr int kAccelCompanion = 105;
+constexpr int kAccelMoveTabLeft = 106;
+constexpr int kAccelMoveTabRight = 107;
 constexpr int kAccelTab1 = 111;
 
 constexpr int kVKeyTab = 0x09;
@@ -75,6 +80,8 @@ constexpr int kVKeyT = 0x54;
 constexpr int kVKeyW = 0x57;
 constexpr int kVKeyC = 0x43;
 constexpr int kVKeyF11 = 0x7A;
+constexpr int kVKeyPageUp = 0x21;
+constexpr int kVKeyPageDown = 0x22;
 
 // R98 user-selected private browser theme, updated only on the CEF UI thread.
 rc_ui::ThemeMode g_ui_theme = rc_ui::ThemeMode::Light;
@@ -635,6 +642,9 @@ void AppController::BuildWindowUI() {
   window_->SetAccelerator(kAccelCloseTab, kVKeyW, false, true, false, true);
   window_->SetAccelerator(kAccelNextTab, kVKeyTab, false, true, false, true);
   window_->SetAccelerator(kAccelPrevTab, kVKeyTab, true, true, false, true);
+  // Chrome-compatible move shortcuts, handled before focused web content.
+  window_->SetAccelerator(kAccelMoveTabLeft, kVKeyPageUp, true, true, false, true);
+  window_->SetAccelerator(kAccelMoveTabRight, kVKeyPageDown, true, true, false, true);
   window_->SetAccelerator(kAccelFullscreen, kVKeyF11, false, false, false, true);
   window_->SetAccelerator(kAccelCompanion, kVKeyC, true, true, false, true);
   for (int i = 0; i < 8; ++i)
@@ -670,6 +680,18 @@ void AppController::BuildHeaderControls() {
   tab_switcher_button_ = switcher;
   header_buttons_.push_back(switcher);
   header_->AddChildView(switcher);
+
+  // Mouse-accessible order controls; only the selected tab is moved.
+  auto move_left = make_button(kMoveTabLeftButton, "←", UiPalette().button);
+  move_left->SetTooltipText("Move selected tab left (Ctrl+Shift+PgUp)");
+  move_left->SetAccessibleName("Move selected tab left");
+  header_buttons_.push_back(move_left);
+  header_->AddChildView(move_left);
+  auto move_right = make_button(kMoveTabRightButton, "→", UiPalette().button);
+  move_right->SetTooltipText("Move selected tab right (Ctrl+Shift+PgDn)");
+  move_right->SetAccessibleName("Move selected tab right");
+  header_buttons_.push_back(move_right);
+  header_->AddChildView(move_right);
 
   auto add = make_button(kNewTabButton, "＋", UiPalette().button);
   add->SetEnabledTextColors(UiPalette().activeText);
@@ -1091,6 +1113,18 @@ void AppController::CycleTab(int delta) {
   SetActiveTabInternal(tabs_[index].id);
 }
 
+void AppController::MoveActiveTab(int direction) {
+  CEF_REQUIRE_UI_THREAD();
+  if (closing_ || !window_ || window_->IsClosed()) return;
+  // Only reorder references. Never re-create the BrowserView, request context,
+  // overlay, profile, cookies or logged-in session.
+  if (!rc_ui::ShiftActiveTab(tabs_, active_tab_id_, direction)) return;
+  RebuildTabStrip();
+  SaveSessionState();  // Persists the user-selected tab order and active index.
+  LOG(WARNING) << "CGWA_TAB_REORDER id=" << active_tab_id_
+               << " direction=" << direction;
+}
+
 void AppController::ToggleTheme() {
   CEF_REQUIRE_UI_THREAD();
   if (closing_ || !window_ || window_->IsClosed()) return;
@@ -1231,6 +1265,8 @@ bool AppController::OnAccelerator(int command_id) {
   if (command_id == kAccelCloseTab) { CloseActiveTab(); return true; }
   if (command_id == kAccelNextTab) { CycleTab(1); return true; }
   if (command_id == kAccelPrevTab) { CycleTab(-1); return true; }
+  if (command_id == kAccelMoveTabLeft) { MoveActiveTab(-1); return true; }
+  if (command_id == kAccelMoveTabRight) { MoveActiveTab(1); return true; }
   if (command_id == kAccelFullscreen) { ToggleFullscreen(); return true; }
   if (command_id == kAccelCompanion) { ToggleCompanionPanel(); return true; }
   if (command_id >= kAccelTab1 && command_id < kAccelTab1 + 8) {
@@ -1292,6 +1328,8 @@ void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
   if (id == kBrandButton) return;
   if (id == kNewTabButton) { NewTab(); return; }
   if (id == kTabSwitcherButton) { CycleTab(1); return; }
+  if (id == kMoveTabLeftButton) { MoveActiveTab(-1); return; }
+  if (id == kMoveTabRightButton) { MoveActiveTab(1); return; }
   if (id == kCompanionButton) { ToggleCompanionPanel(); return; }
   if (id == kThemeButton) { ToggleTheme(); return; }
   if (id == kCompanionRefreshButton) { RefreshCompanion(); return; }
