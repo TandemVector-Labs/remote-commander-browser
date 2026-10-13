@@ -20,3 +20,20 @@ Apply `NO_STACK_PROTECTOR` to `RunBrowser` **only on Linux**, preserving Windows
 ## Evidence, limitations and next action
 
 Source regression RED before patch and GREEN after patch; static QA PASS. This is not compiled-product acceptance and has not changed any stable installation. Build isolated Linux candidate from pinned CEF, verify its RunBrowser no longer has canary instructions, and run a separate no-account isolated profile self-test. Require both stdout/stderr and chrome_debug.log to be free of stack-smashing, along with lifecycle markers, real X11 window presence, sandbox ownership, session preservation and explicit owner promotion gate.
+
+## R1.1 — Linux CI stderr guard
+
+The Linux native jobs in `.github/workflows/build.yml` and the
+`linux-regression` job of `.github/workflows/windows-native.yml` previously
+checked `chrome_debug.log` but not the captured subprocess stdout/stderr.
+That was a **false-acceptance risk**: an aborted CEF utility process can print
+a stack-canary error while the browser parent exits 0 and internal lifecycle
+markers PASS. Both Linux jobs now fail closed (exit 36) on
+`stack smashing detected` in the captured subprocess stream.
+
+Regression: a retained, isolated Linux smoke stderr fixture containing the
+stack-canary message is rejected by `grep -Fq`, while the clean control
+stream passes. CI workflow YAML parses successfully; no Linux sandbox
+settings or Windows-only jobs were modified. Local CEF-free native tests:
+`companion-contract` and `tab-order-contract` PASS (2/2). Full CEF compile
+and Ubuntu 26.04 native acceptance remain OPEN.
