@@ -244,6 +244,12 @@ jobs:
           grep -q 'CGWA_SHUTDOWN FINALIZE' .qa/native-linux-chrome.log
           grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' .qa/native-linux-chrome.log
           ! grep -Eq 'FATAL|GPU process isn.t usable|segfault|stack smashing|trap|CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL' .qa/native-linux-chrome.log
+          # Linux-only regression: Chromium utility subprocess errors may go
+          # to captured stderr, not to the parent chrome_debug.log.
+          if grep -Fq 'stack smashing detected' .qa/native-linux.out; then
+            echo 'CEF_CHILD_STACK_CANARY_FAIL (stdout/stderr)'
+            exit 36
+          fi
           sha256sum build/bin/chatgpt-cef-v2 | tee build/BINARY_SHA256-linux.txt
 
       - uses: actions/upload-artifact@v4

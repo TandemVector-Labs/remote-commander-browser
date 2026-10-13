@@ -125,6 +125,12 @@ jobs:
             echo 'Native runtime error marker; gate failed'
             exit 33
           fi
+          # Child-process stack-canary aborts can reach stderr while the browser
+          # parent still exits 0 and chrome_debug.log looks clean.
+          if grep -Fq 'stack smashing detected' .qa/companion-native-runtime.out; then
+            echo 'CEF_CHILD_STACK_CANARY_FAIL (stdout/stderr)'
+            exit 36
+          fi
           echo 'COMPANION_NATIVE_RUNTIME=PASS (isolated unauthenticated profile; no session/tool authority claim)'
 
       - name: R247 real native X11 mouse drag (isolated unauthenticated profile)
