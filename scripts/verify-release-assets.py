@@ -58,11 +58,21 @@ def verify(version: str, directory: Path) -> dict[str, str]:
             raise IntegrityError(f"Non-ASCII checksum manifest: {manifest}") from exc
         if len(lines) != 1:
             raise IntegrityError(f"Expected one checksum record: {manifest}")
-        match = re.fullmatch(r"([a-fA-F0-9]{64})  ([^\\/\r\n]+)", lines[0])
-        if match is None or match.group(2) != asset:
+        # The checksum record is ASCII and at most 512 bytes (guarded above).
+        # Exact-width slicing avoids a potentially costly regex on user-supplied
+        # manifest content while preserving the strict portable-name policy.
+        record = lines[0]
+        digest = record[:64]
+        checksum_name = record[66:]
+        if (
+            len(record) != 66 + len(asset)
+            or record[64:66] != "  "
+            or checksum_name != asset
+            or any(ch not in "0123456789abcdefABCDEF" for ch in digest)
+        ):
             raise IntegrityError(f"Checksum must name exactly the portable asset basename: {manifest}")
         actual_hash = sha256(directory / asset)
-        if actual_hash != match.group(1).lower():
+        if actual_hash != digest.lower():
             raise IntegrityError(f"Producer checksum mismatch: {asset}")
         verified[asset] = actual_hash
     return verified
