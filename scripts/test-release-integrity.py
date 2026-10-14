@@ -93,6 +93,24 @@ class ReleaseIntegrityTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(MODULE.IntegrityError):
                 MODULE.verify(value, self.release)
 
+    def test_maximum_size_adversarial_checksum_record_rejected(self):
+        # A near-miss 512-byte ASCII record must fail in bounded time.
+        # (64 hex + 2 spaces + 445 hostile name bytes + newline.)
+        record = "f" * 64 + "  " + "0" * 445 + "\n"
+        self.assertEqual(len(record.encode("ascii")), 512)
+        self.manifest.write_text(record, encoding="ascii")
+        self.rejected()
+
+    def test_nonhex_checksum_digest_rejected(self):
+        record = self.manifest.read_text(encoding="ascii")
+        self.manifest.write_text("g" + record[1:], encoding="ascii")
+        self.rejected()
+
+    def test_checksum_separator_must_be_two_spaces(self):
+        record = self.manifest.read_text(encoding="ascii")
+        self.manifest.write_text(record[:64] + " \t" + record[66:], encoding="ascii")
+        self.rejected()
+
     def test_cli_returns_nonzero_for_bad_hash(self):
         (self.release / self.setup).write_bytes(b"TAMPERED")
         import sys
