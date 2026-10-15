@@ -130,6 +130,7 @@ class AppController {
   CefRefPtr<CefLabelButton> theme_button_;
   int visible_tab_capacity_ = -1;
   companion::Monitor companion_monitor_;
+  companion::Automation companion_automation_;
   companion::Observation companion_observation_;
   companion::NativeBinding companion_binding_;
   CefRefPtr<CefBoxLayout> window_layout_;
