@@ -52,12 +52,21 @@ struct Monitor {
   std::vector<std::string> extensions;
 };
 
+struct Automation {
+  bool valid = false, blocked = false;
+  std::string error = "AUTOMATION_MISSING";
+  uint64_t observed_at = 0, expires_at = 0;
+  std::string config_sha256, local_model, work_credits, credit_usage;
+  bool runner_configured = false, automatic_execution = false;
+};
+
 struct DisplayRow { std::string text, detail; };
 
 // Pure deterministic parser/validation. Duplicate keys (including escaped
 // aliases), unknown keys, invalid UTF-8, excessive depth/nodes and size fail shut.
 Observation ParseObservation(const std::string& json);
 Monitor ParseMonitor(const std::string& json);
+Automation ParseAutomation(const std::string& json);
 NativeBinding ParseNativeBinding(const std::string& json);
 std::string CatalogSha256(std::vector<std::string> names);
 bool IsCanonicalChatUrl(const std::string& url);
@@ -65,8 +74,10 @@ bool IsCanonicalProjectRoot(const std::string& root);
 bool SameProjectRoot(const std::string& a, const std::string& b);
 bool IsFresh(const Observation& observation, uint64_t now_ms);
 bool IsFresh(const Monitor& monitor, uint64_t now_ms);
+bool IsFresh(const Automation& automation, uint64_t now_ms);
 bool ImmutableSnapshotName(const std::string& name, uint64_t& observed_at);
 std::vector<DisplayRow> DescribeMonitor(const Monitor& monitor, uint64_t now_ms);
+std::vector<DisplayRow> DescribeAutomation(const Automation& automation, const Monitor& monitor, uint64_t now_ms);
 std::vector<DisplayRow> Describe(const Observation& observation,
                                  const NativeBinding& expected,
                                  const std::string& active_url,
@@ -77,6 +88,7 @@ std::vector<DisplayRow> Describe(const Observation& observation,
 // regular files, no links, no symlink path components, identity recheck.
 Observation ReadObservation(const std::string& profile_root);
 Monitor ReadMonitor(const std::string& profile_root);
+Automation ReadAutomation(const std::string& profile_root);
 NativeBinding ReadNativeBinding(const std::string& profile_root);
 std::string ProfileRoot();
 uint64_t NowEpochMs();

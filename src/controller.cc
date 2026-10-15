@@ -880,6 +880,7 @@ void AppController::RefreshCompanion() {
   if (closing_) return;
   const std::string root = companion::ProfileRoot();
   companion_monitor_ = companion::ReadMonitor(root);
+  companion_automation_ = companion::ReadAutomation(root);
   companion_observation_ = companion::ReadObservation(root);
   companion_binding_ = companion::ReadNativeBinding(root);
   UpdateCompanionPanel();
@@ -898,6 +899,8 @@ void AppController::UpdateCompanionPanel() {
   }
   const uint64_t now=companion::NowEpochMs();
   auto rows = companion::DescribeMonitor(companion_monitor_, now);
+  const auto automation_rows = companion::DescribeAutomation(companion_automation_, companion_monitor_, now);
+  rows.insert(rows.end(), automation_rows.begin(), automation_rows.end());
   const auto binding_rows = companion::Describe(companion_observation_, companion_binding_, active_url, now);
   rows.insert(rows.end(), binding_rows.begin(), binding_rows.end());
   const int available_height =
@@ -937,6 +940,7 @@ void AppController::CompanionTick() {
   companion_tick_scheduled_ = false;
   if (closing_ || !companion_visible_) return;
   companion_monitor_ = companion::ReadMonitor(companion::ProfileRoot());
+  companion_automation_ = companion::ReadAutomation(companion::ProfileRoot());
   UpdateCompanionPanel();
   companion_tick_scheduled_ = true;
   // No captured controller pointer: a queued tick cannot dereference a

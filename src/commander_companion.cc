@@ -625,6 +625,33 @@ Monitor ParseMonitor(const std::string& json) {
   m.valid=true; m.error.clear(); return m;
 }
 
+Automation ParseAutomation(const std::string& json) {
+  Automation a; Json root;
+  if (json.size() > 4096 || !Parser(json).Parse(root)) { a.error = "AUTOMATION_JSON_INVALID"; return a; }
+  a.error = "AUTOMATION_SCHEMA_INVALID";
+  if (!Keys(root, {"schema","kind","observedAtEpochMs","expiresAtEpochMs","configSha256","automation"}) ||
+      At(root,"schema").type != Json::Number || At(root,"schema").number != 1 ||
+      At(root,"kind").type != Json::String || At(root,"kind").string != "COMMANDER_AUTOMATION_MONITOR" ||
+      !Integer(At(root,"observedAtEpochMs"),a.observed_at,kMaxSafeInteger,false) ||
+      !Integer(At(root,"expiresAtEpochMs"),a.expires_at,kMaxSafeInteger,false) ||
+      a.expires_at < a.observed_at || a.expires_at - a.observed_at > 30000 ||
+      !AsText(At(root,"configSha256"),a.config_sha256,64,false) || !Hex(a.config_sha256,64)) return a;
+  const auto& state = At(root,"automation");
+  if (!Keys(state,{"runnerConfigured","automaticExecution","localModel","workCredits","creditUsage"}) ||
+      At(state,"runnerConfigured").type != Json::Boolean ||
+      At(state,"automaticExecution").type != Json::Boolean ||
+      !AsText(At(state,"localModel"),a.local_model,48,false) ||
+      !OneOf(a.local_model,{"UNVERIFIED","NOT_ATTACHED","PROPOSAL_ONLY"}) ||
+      !AsText(At(state,"workCredits"),a.work_credits,48,false) ||
+      !OneOf(a.work_credits,{"DENY_IN_CORE","UNVERIFIED"}) ||
+      !AsText(At(state,"creditUsage"),a.credit_usage,48,false) ||
+      a.credit_usage != "UNVERIFIED") return a;
+  a.runner_configured=At(state,"runnerConfigured").boolean;
+  a.automatic_execution=At(state,"automaticExecution").boolean;
+  if (a.automatic_execution && !a.runner_configured) return a;
+  a.valid=true; a.error.clear(); return a;
+}
+
 NativeBinding ParseNativeBinding(const std::string& json) {
   NativeBinding out; Json root;
   out.error = "NATIVE_BINDING_INVALID";
@@ -638,6 +665,10 @@ bool IsFresh(const Observation& s, uint64_t now_ms) {
 
 bool IsFresh(const Monitor& m, uint64_t now_ms) {
   return m.valid && now_ms >= m.observed_at && now_ms < m.expires_at;
+}
+
+bool IsFresh(const Automation& a, uint64_t now_ms) {
+  return a.valid && now_ms >= a.observed_at && now_ms < a.expires_at;
 }
 
 bool ImmutableSnapshotName(const std::string& name, uint64_t& observed_at) {
@@ -683,6 +714,26 @@ std::vector<DisplayRow> DescribeMonitor(const Monitor& m, uint64_t now_ms) {
   rows.push_back({"Operations: "+std::to_string(m.active_operations)+" active / "+std::to_string(m.locked_keys)+" locks",
     "Live local Commander counters; no command is executed by this panel."});
   rows.push_back({"Monitor TTL: "+std::to_string((m.expires_at-now_ms)/1000)+"s","Private local file refreshed by Commander Core; Browser only reads it."});
+  return rows;
+}
+
+std::vector<DisplayRow> DescribeAutomation(const Automation& a, const Monitor& m, uint64_t now_ms) {
+  std::vector<DisplayRow> rows;
+  if (!IsFresh(m,now_ms) || !IsFresh(a,now_ms) ||
+      m.config_sha256 != a.config_sha256 ||
+      a.observed_at > m.observed_at + 10000 ||
+      m.observed_at > a.observed_at + 10000) {
+    rows.push_back({"Automation: UNVERIFIED",
+      a.valid ? "Stale or mismatched private automation evidence" : a.error});
+    rows.push_back({"Work credits: UNVERIFIED","No account-level billing receipt"});
+    return rows;
+  }
+  const std::string state=a.automatic_execution?"AUTO_READ_ONLY":
+    a.runner_configured?"MANUAL_ONLY":"NOT_CONFIGURED";
+  rows.push_back({"Automation: "+state,"Local model: "+a.local_model+
+    "; private status only, not independent model acceptance"});
+  rows.push_back({"Work credits: "+a.work_credits,
+    "Core guard policy, account usage "+a.credit_usage+"; Browser cannot execute anything"});
   return rows;
 }
 
@@ -789,6 +840,18 @@ Monitor ReadMonitor(const std::string& root) {
   Monitor out=ParseMonitor(bytes);
   if (!out.valid) out.blocked=true;
   return out;
+}
+
+Automation ReadAutomation(const std::string& root) {
+  std::string error;
+  const std::string bytes=ReadPrivateFile(root,"commander-automation.json",4096,error);
+  if (!error.empty()) {
+    Automation a; a.error=error=="FILE_MISSING"?"AUTOMATION_MISSING":error;
+    a.blocked=a.error!="AUTOMATION_MISSING"; return a;
+  }
+  Automation a=ParseAutomation(bytes);
+  if (!a.valid) a.blocked=true;
+  return a;
 }
 
 NativeBinding ReadNativeBinding(const std::string& root) {
