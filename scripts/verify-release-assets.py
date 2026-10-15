@@ -73,8 +73,17 @@ def trusted_cli_release_stage(value: Path) -> Path:
     repo_root = Path(__file__).resolve().parent.parent
     if Path.cwd().resolve() != repo_root or value != Path("dist") / "release":
         raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
-    candidate = repo_root / "dist" / "release"
-    if candidate.is_symlink():
+    dist_root = repo_root / "dist"
+    candidate = dist_root / "release"
+    # Checking only the leaf misses an attacker-controlled dist -> outside symlink.
+    # All ancestors below the resolved repository root must be real directories.
+    if (
+        not dist_root.is_dir()
+        or dist_root.is_symlink()
+        or not candidate.is_dir()
+        or candidate.is_symlink()
+        or candidate.resolve() != repo_root / "dist" / "release"
+    ):
         raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
     return candidate
 

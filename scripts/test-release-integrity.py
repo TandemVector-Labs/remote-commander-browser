@@ -124,6 +124,41 @@ class ReleaseIntegrityTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
 
+    def test_cli_accepts_valid_fixed_real_stage_directory(self):
+        import sys
+        fake = self.root / "minimal-repo"
+        scripts = fake / "scripts"
+        scripts.mkdir(parents=True)
+        shutil.copyfile(ROOT / "scripts" / "verify-release-assets.py",
+                        scripts / "verify-release-assets.py")
+        stage = fake / "dist" / "release"
+        shutil.copytree(self.release, stage)
+        result = subprocess.run(
+            [sys.executable, str(scripts / "verify-release-assets.py"),
+             VERSION, "dist/release"],
+            cwd=fake, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("RELEASE_PRODUCER_SHA256_PASS", result.stdout)
+
+    @unittest.skipUnless(os.name == "posix", "native POSIX parent symlink semantics")
+    def test_cli_rejects_symlinked_dist_parent_even_with_valid_assets(self):
+        import sys
+        fake = self.root / "symlinked-repo"
+        scripts = fake / "scripts"
+        scripts.mkdir(parents=True)
+        shutil.copyfile(ROOT / "scripts" / "verify-release-assets.py",
+                        scripts / "verify-release-assets.py")
+        # self.root/release has valid, correctly hashed payloads.
+        # The dist parent points outside fake even though dist/release is
+        # not itself a symlink. The CLI must deny before hashing anything.
+        (fake / "dist").symlink_to(self.root, target_is_directory=True)
+        result = subprocess.run(
+            [sys.executable, str(scripts / "verify-release-assets.py"),
+             VERSION, "dist/release"],
+            cwd=fake, capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
+
     @unittest.skipUnless(os.name == "posix", "native POSIX symlink semantics")
     def test_symlink_member_rejected(self):
         member = self.release / self.setup
