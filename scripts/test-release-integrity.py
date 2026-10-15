@@ -103,6 +103,27 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RELEASE_PRODUCER_SHA256_FAIL", result.stderr)
 
+    def test_cli_rejects_valid_but_untrusted_root(self):
+        import sys
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "verify-release-assets.py"),
+             VERSION, str(self.release)],
+            capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
+
+    def test_cli_rejects_path_traversal_and_noncanonical_aliases(self):
+        import sys
+        for name in ("dist/../dist/release", "../dist/release",
+                     "dist/release/../release", str(self.release)):
+            with self.subTest(name=name):
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts" / "verify-release-assets.py"),
+                     VERSION, name], cwd=ROOT,
+                    capture_output=True, text=True, timeout=15)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
+
     @unittest.skipUnless(os.name == "posix", "native POSIX symlink semantics")
     def test_symlink_member_rejected(self):
         member = self.release / self.setup
