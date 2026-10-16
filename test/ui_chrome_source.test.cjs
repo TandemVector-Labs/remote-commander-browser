@@ -12,7 +12,7 @@ test('native chrome height is one shared constant for header and BrowserView ove
  assert.match(controller,/constexpr int kHeaderHeight = 52;/);
  assert.match(controller,/new FixedPanelDelegate\(1240, kHeaderHeight\)/);
  assert.match(controller,/header_visible \? kHeaderHeight : 0/);
- assert.match(controller,/fullscreen_ \? 0 : kHeaderHeight/);
+ assert.match(controller,/header_->IsVisible\(\)\) \? kHeaderHeight : 0/);
 });
 test('all eight restored tab states remain in the model, only controls are bounded',()=>{
  assert.match(layout,/SelectTabs\(int logical_width, int count, int active\)/);

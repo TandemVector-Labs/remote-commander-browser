@@ -96,7 +96,9 @@ class AppController {
   void BuildWindowUI();
   bool VerticalTabsVisible() const;
   int SidebarWidth() const;
+  bool SidebarCompactEffective() const;
   void RunVerticalTabsSelfTest();
+  void RunFullscreenTabsSelfTest();
   void BuildHeaderControls();
   void UpdateDraggableRegions();
   void RebuildTabStrip();
@@ -162,6 +164,7 @@ class AppController {
   bool fullscreen_ = false;
   bool vertical_tabs_ = false;
   bool sidebar_compact_ = false;
+  bool fullscreen_sidebar_expanded_ = false;
   bool companion_visible_ = false;
   bool companion_tick_scheduled_ = false;
   bool closing_ = false;

@@ -40,8 +40,8 @@ test('Firefox-like rail toggles compact and expanded without a new web context',
  assert.match(src,/ui-tabs-compact\.state/);
  assert.match(src,/SaveSidebarCompactPreference\(next\)/);
  assert.match(src,/ToggleSidebarCompact\(\)/);
- assert.match(src,/close->SetVisible\(!vertical \|\| !sidebar_compact_\)/);
- assert.match(src,/kSidebarBackground = 0xFF101114u/);
+ assert.match(src,/close->SetVisible\(!vertical \|\| !SidebarCompactEffective\(\)\)/);
+ assert.match(src,/UiSidebarPalette\(\)\.background/);
 });
 test('window controls remain pinned at right across all orientations',()=>{
  assert.match(src,/header_spacer_ = CefPanel::CreatePanel/);
@@ -49,4 +49,14 @@ test('window controls remain pinned at right across all orientations',()=>{
  assert.match(src,/horizontal_right == expanded_right/);
  assert.match(src,/horizontal_right == compact_right/);
  assert.match(src,/horizontal_right == restored_right/);
+});
+
+test('native fullscreen makes both vertical rail and horizontal tab strip accessible',()=>{
+ assert.match(src,/CGWA_FULLSCREEN_TABS_SELFTEST/);
+ assert.match(src,/OnWindowFullscreenTransition/);
+ assert.match(src,/header_->SetVisible\(!fullscreen_ \|\| !vertical_tabs_\)/);
+ assert.match(src,/return fullscreen_ \? !fullscreen_sidebar_expanded_ : sidebar_compact_/);
+ assert.match(src,/if \(command_id == kAccelOrientation\) \{ ToggleTabsOrientation\(\); return true; \}/);
+ assert.match(src,/SetAccelerator\(kAccelOrientation, kVKeyE, true, true, false, true\)/);
+ assert.match(src,/tab_selector_visible=/);
 });
