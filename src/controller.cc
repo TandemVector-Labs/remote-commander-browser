@@ -1197,7 +1197,7 @@ void AppController::RunCompanionSelfTest() {
   Tab* active = FindTabById(active_tab_id_);
   const bool shown = companion_overlay_ && companion_overlay_->IsValid() && companion_overlay_->IsVisible();
   const bool separate = shown && active && active->overlay && active->overlay->IsValid() &&
-    active->overlay->GetBounds().width == companion_overlay_->GetBounds().x &&
+    active->overlay->GetBounds().x + active->overlay->GetBounds().width == companion_overlay_->GetBounds().x &&
     companion_overlay_->GetBounds().width == kCompanionWidth;
 #if defined(_WIN32)
   const bool companion_safe =
