@@ -251,6 +251,7 @@ def activate(home, version, binary_hash, sandbox_hash, package, package_hash,
         temp_state.mkdir(mode=0o700)
         try:
             journal = {"format": 1, "version": version, "source_commit": source_commit,
+                       "binary_sha256": binary_hash, "sandbox_sha256": sandbox_hash,
                        "package_sha256": package_hash, "files": {}}
             for name, (path, content, mode) in outputs.items():
                 previous = old[name]
@@ -299,6 +300,17 @@ def action(home, mode):
             rollback_locked(home, app)
             return
         state, record = read_journal(app)
+        # Do not discard the only rollback receipt while executable, privileged
+        # helper, or release package bytes/permissions have drifted since activation.
+        required = ("version", "source_commit", "binary_sha256",
+                    "sandbox_sha256", "package_sha256")
+        require(all(isinstance(record.get(key), str) for key in required),
+                "finalize missing staged artifact attestations")
+        package = (app / ("runtime-v" + record["version"])
+                   / ".approved-release.zip")
+        validate_staged(app, record["version"], record["binary_sha256"],
+                        record["sandbox_sha256"], package,
+                        record["package_sha256"], record["source_commit"])
         for name, path in (("launcher", home / ".local/bin/chatgpt-cef-v2"),
                            ("desktop", home / ".local/share/applications/chatgpt-cef-v2.desktop")):
             cur = regular_or_absent(path)

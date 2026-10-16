@@ -261,5 +261,54 @@ class TransactionTests(unittest.TestCase):
         self.assert_unmodified()
 
 
+    def test_finalize_revalidates_staged_binary_after_activation(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            original = self.binary.read_bytes()
+            self.binary.write_bytes(original + b"UNTRUSTED_BINARY_DRIFT")
+            with self.assertRaisesRegex(upgrade.UpgradeError, "binary digest mismatch"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            self.binary.write_bytes(original)
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+
+    def test_finalize_revalidates_approved_package_after_activation(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            original = self.package.read_bytes()
+            self.package.write_bytes(original + b"UNTRUSTED_PACKAGE_DRIFT")
+            with self.assertRaisesRegex(upgrade.UpgradeError, "candidate package digest mismatch"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            self.package.write_bytes(original)
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+
+    def test_finalize_revalidates_suid_helper_after_activation(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            original = self.sandbox.read_bytes()
+            self.sandbox.write_bytes(original + b"UNTRUSTED_SANDBOX_DRIFT")
+            with self.assertRaisesRegex(upgrade.UpgradeError, "sandbox digest mismatch"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            self.sandbox.write_bytes(original)
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+
+    def test_finalize_refuses_new_world_writable_package(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            previous = stat.S_IMODE(self.package.stat().st_mode)
+            self.package.chmod(0o777)
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe staged package"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            self.package.chmod(previous)
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+
+
 if __name__ == "__main__":
     unittest.main()
