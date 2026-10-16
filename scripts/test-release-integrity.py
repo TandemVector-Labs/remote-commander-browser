@@ -268,6 +268,7 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertEqual(rejected.stdout, "")
 
 
+    @unittest.skipUnless(os.name == "posix", "Linux runtime/symlink semantics")
     def test_uninstall_old_runtime_denies_live_newer_sandbox_symlink(self):
         # A newer stable runtime can depend on a root-owned helper from an
         # older runtime. No sudo, profile or launcher mutation is permissible.
@@ -313,6 +314,7 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertTrue(desktop.is_file())
         self.assertEqual((profile / "session").read_text(), "PRESERVE")
 
+    @unittest.skipUnless(os.name == "posix", "Linux runtime/symlink semantics")
     def test_uninstall_runtime_symlink_fails_before_any_mutation(self):
         home = self.root / "uninstall-symlink-home"
         base = home / ".local" / "share" / "chatgpt-cef-v2"
