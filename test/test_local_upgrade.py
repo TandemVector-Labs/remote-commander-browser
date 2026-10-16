@@ -253,5 +253,13 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.desktop.stat().st_mode), 0o644)
 
 
+    def test_world_writable_approved_package_denied(self):
+        self.package.chmod(0o777)
+        with self.trusted_fixture():
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe staged package"):
+                upgrade.activate(**self.kwargs())
+        self.assert_unmodified()
+
+
 if __name__ == "__main__":
     unittest.main()

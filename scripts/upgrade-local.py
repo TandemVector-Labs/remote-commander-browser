@@ -107,6 +107,11 @@ def validate_staged(app, version, binary_hash, sandbox_hash, package, package_ha
             "unsafe binary ownership or executability/permissions")
     require(stat.S_ISREG(sstat.st_mode) and sstat.st_uid == 0 and sstat.st_gid == 0
             and stat.S_IMODE(sstat.st_mode) == 0o4755, "SUID sandbox must be root:root 4755")
+    pstat = package.lstat()
+    require(stat.S_ISREG(pstat.st_mode)
+            and pstat.st_uid in (0, os.getuid())
+            and not (pstat.st_mode & 0o022),
+            "unsafe staged package ownership/permissions")
     require(digest_file(binary) == binary_hash, "binary digest mismatch")
     require(digest_file(sandbox) == sandbox_hash, "sandbox digest mismatch")
     require(digest_file(package) == package_hash, "candidate package digest mismatch")
