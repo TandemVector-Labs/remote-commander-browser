@@ -170,6 +170,31 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual((self.profile / "cookies.private").read_bytes(),
                          b"private-profile-preservation-marker")
 
+    def test_group_or_world_writable_app_root_is_denied(self):
+        self.app.chmod(0o777)
+        with self.trusted_fixture():
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe directory"):
+                upgrade.activate(**self.kwargs())
+        self.assert_unmodified()
+
+    def test_other_writable_lock_file_is_denied(self):
+        lock = self.app / upgrade.LOCK
+        lock.write_bytes(b"untrusted lock")
+        lock.chmod(0o666)
+        with self.trusted_fixture():
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe upgrade lock"):
+                upgrade.activate(**self.kwargs())
+        self.assert_unmodified()
+
+    def test_untrusted_journal_directory_is_denied_on_rollback(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            journal = self.app / upgrade.STATE
+            journal.chmod(0o777)
+            with self.assertRaisesRegex(upgrade.UpgradeError, "no trusted rollback"):
+                upgrade.action(self.home, "rollback")
+        self.assertIn(b"runtime-v0.8.4", self.launcher.read_bytes())
+
     def test_symlinked_parent_is_denied(self):
         self.desktop.unlink()
         self.desktop.parent.rmdir()

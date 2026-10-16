@@ -66,8 +66,9 @@ def validate_dirs(home):
         if not path.exists():
             path.mkdir(mode=0o700)
         meta = path.lstat()
-        require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == os.getuid(),
-                "unsafe directory ownership: " + str(path))
+        require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == os.getuid()
+                and not (meta.st_mode & 0o022),
+                "unsafe directory ownership/permissions: " + str(path))
     return roots[3]
 
 
@@ -89,6 +90,9 @@ def validate_staged(app, version, binary_hash, sandbox_hash, package, package_ha
             "expected digests/source identity required")
     runtime = app / ("runtime-v" + version)
     require(runtime.is_dir() and not runtime.is_symlink(), "distinct staged runtime missing or linked")
+    meta = runtime.lstat()
+    require(meta.st_uid == os.getuid() and not (meta.st_mode & 0o022),
+            "staged runtime must be user-owned and non-writable by other principals")
     require(runtime.resolve() == runtime, "runtime ancestor resolves outside trusted runtime")
     binary, sandbox = runtime / "chatgpt-cef-v2", runtime / "chrome-sandbox"
     for path in (binary, sandbox, package):
@@ -165,9 +169,11 @@ def atomic_write(path, data, mode):
 def read_journal(app):
     state = app / STATE
     require(state.is_dir() and not state.is_symlink()
-            and state.lstat().st_uid == os.getuid(), "no trusted rollback transaction")
+            and state.lstat().st_uid == os.getuid()
+            and not (state.lstat().st_mode & 0o077), "no trusted rollback transaction")
     meta = state / "journal.json"
-    require(meta.is_file() and not meta.is_symlink(), "rollback metadata invalid")
+    require(meta.is_file() and not meta.is_symlink()
+            and meta.lstat().st_uid == os.getuid(), "rollback metadata invalid")
     obj = json.loads(meta.read_text())
     require(obj.get("format") == 1 and set(obj["files"]) == {"launcher", "desktop"},
             "unrecognized rollback metadata")
@@ -205,6 +211,11 @@ def rollback_locked(home, app, remove_state=True):
 def with_lock(app):
     path = app / LOCK
     fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    meta = os.fstat(fd)
+    if not (stat.S_ISREG(meta.st_mode) and meta.st_uid == os.getuid()
+            and not (meta.st_mode & 0o022)):
+        os.close(fd)
+        raise UpgradeError("unsafe upgrade lock ownership or permissions")
     fcntl.flock(fd, fcntl.LOCK_EX)
     return fd
 
