@@ -131,7 +131,7 @@ jobs:
           foreach($marker in @('CGWA_COMPANION_SELFTEST PASS','CGWA_SELFTEST PASS','CGWA_LAST_TAB_SELFTEST PASS','CGWA_UI_TAB_CLOSE_SELFTEST PASS','CGWA_THEME_SELFTEST PASS','CGWA_SHUTDOWN FINALIZE','CGWA_SHUTDOWN WINDOW_DESTROYED')){
             if(-not $text.Contains($marker)){ throw "missing marker: $marker" }
           }
-          if($text -match 'CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL|FATAL|stack smashing'){ throw 'native failure marker present' }
+          if($text -match 'CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL|FATAL|stack smashing|SIGSEGV|segfault|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable'){ throw 'native failure marker present' }
           Write-Output 'WINDOWS_NATIVE_LIFECYCLE_PASS'
 
       - name: Package Windows preview
@@ -246,8 +246,8 @@ jobs:
           ! grep -Eq 'FATAL|GPU process isn.t usable|segfault|stack smashing|trap|CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL' .qa/native-linux-chrome.log
           # Linux-only regression: Chromium utility subprocess errors may go
           # to captured stderr, not to the parent chrome_debug.log.
-          if grep -Fq 'stack smashing detected' .qa/native-linux.out; then
-            echo 'CEF_CHILD_STACK_CANARY_FAIL (stdout/stderr)'
+          if grep -Eiq 'stack smashing detected|SIGSEGV|segfault|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable|FATAL' .qa/native-linux.out; then
+            echo 'CEF_CHILD_FATAL_DIAGNOSTIC_FAIL (stdout/stderr)'
             exit 36
           fi
           sha256sum build/bin/chatgpt-cef-v2 | tee build/BINARY_SHA256-linux.txt
