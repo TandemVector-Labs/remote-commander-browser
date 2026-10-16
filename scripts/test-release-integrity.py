@@ -331,5 +331,58 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertIn("UNINSTALL_RUNTIME_REPARSE_REFUSED", p.stderr)
         self.assertEqual((outside / "sentinel").read_text(), "DO_NOT_TOUCH")
 
+    @unittest.skipUnless(os.name == "posix", "Linux ancestor-symlink semantics")
+    def test_uninstall_rejects_symlinked_runtime_ancestors(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        for location in ("approot", "share"):
+            with self.subTest(location=location):
+                home = self.root / f"host-{location}"
+                outside = self.root / f"external-{location}"
+                outside.mkdir()
+                if location == "approot":
+                    (home / ".local" / "share").mkdir(parents=True)
+                    (home / ".local" / "share" / "chatgpt-cef-v2").symlink_to(
+                        outside, target_is_directory=True)
+                    external_runtime = outside / f"runtime-v{version}"
+                else:
+                    (home / ".local").mkdir(parents=True)
+                    (home / ".local" / "share").symlink_to(
+                        outside, target_is_directory=True)
+                    external_runtime = outside / "chatgpt-cef-v2" / f"runtime-v{version}"
+                external_runtime.mkdir(parents=True)
+                sentinel = external_runtime / "SYNTHETIC_DO_NOT_DELETE"
+                sentinel.write_text("PRESERVE", encoding="utf-8")
+                p = subprocess.run(
+                    ["bash", str(ROOT / "scripts" / "uninstall-local.sh")],
+                    env={**os.environ, "HOME": str(home)},
+                    capture_output=True, text=True, timeout=12)
+                self.assertNotEqual(p.returncode, 0, p.stdout)
+                self.assertIn("UNINSTALL_ANCESTOR_REPARSE_REFUSED", p.stderr)
+                self.assertEqual(sentinel.read_text(encoding="utf-8"), "PRESERVE")
+
+    @unittest.skipUnless(os.name == "posix", "Linux config ancestor-symlink semantics")
+    def test_uninstall_purge_profile_rejects_config_ancestor_symlink(self):
+        home = self.root / "profile-ancestor-home"
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        runtime = home / ".local" / "share" / "chatgpt-cef-v2" / f"runtime-v{version}"
+        runtime.mkdir(parents=True)
+        (runtime / "SYNTHETIC_RUNTIME").write_text("PRESERVE", encoding="utf-8")
+        launcher = home / ".local" / "bin" / "chatgpt-cef-v2"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(f'#!/bin/sh\nRUNTIME="{runtime}"\n', encoding="utf-8")
+        outside = self.root / "external-config-ancestor"
+        (outside / "chatgpt-cef-v2").mkdir(parents=True)
+        sentinel = outside / "chatgpt-cef-v2" / "SYNTHETIC_PROFILE"
+        sentinel.write_text("PRESERVE", encoding="utf-8")
+        (home / ".config").symlink_to(outside, target_is_directory=True)
+        p = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "uninstall-local.sh"), "--purge-profile"],
+            env={**os.environ, "HOME": str(home)},
+            capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(p.returncode, 0, p.stdout)
+        self.assertIn("UNINSTALL_ANCESTOR_REPARSE_REFUSED", p.stderr)
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "PRESERVE")
+        self.assertTrue(runtime.is_dir())
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
