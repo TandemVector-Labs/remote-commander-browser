@@ -267,5 +267,69 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertEqual(rejected.returncode, 24, rejected.stderr)
         self.assertEqual(rejected.stdout, "")
 
+
+    @unittest.skipUnless(os.name == "posix", "Linux runtime/symlink semantics")
+    def test_uninstall_old_runtime_denies_live_newer_sandbox_symlink(self):
+        # A newer stable runtime can depend on a root-owned helper from an
+        # older runtime. No sudo, profile or launcher mutation is permissible.
+        home = self.root / "uninstall-home"
+        base = home / ".local" / "share" / "chatgpt-cef-v2"
+        uninstall_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        old = base / f"runtime-v{uninstall_version}"
+        newer = base / "runtime-v9.9.9"
+        old.mkdir(parents=True)
+        newer.mkdir()
+        old_sandbox = old / "chrome-sandbox"
+        old_sandbox.write_bytes(b"private test sandbox; no SUID\n")
+        (newer / "chrome-sandbox").symlink_to(old_sandbox)
+        launcher = home / ".local" / "bin" / "chatgpt-cef-v2"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(f'#!/bin/sh\nRUNTIME="{newer}"\n', encoding="utf-8")
+        desktop = home / ".local" / "share" / "applications" / "chatgpt-cef-v2.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("[Desktop Entry]\nName=Browser\n", encoding="utf-8")
+        profile = home / ".config" / "chatgpt-cef-v2"
+        profile.mkdir(parents=True)
+        (profile / "session").write_text("PRESERVE", encoding="utf-8")
+        env = {**os.environ, "HOME": str(home)}
+        script = ROOT / "scripts" / "uninstall-local.sh"
+        proc = subprocess.run(["bash", str(script)], env=env,
+                              capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("UNINSTALL_SANDBOX_REFERENCED_BY_ANOTHER_VERSION", proc.stderr)
+        self.assertTrue(old_sandbox.is_file())
+        self.assertTrue((newer / "chrome-sandbox").is_symlink())
+        self.assertTrue(launcher.is_file())
+        self.assertTrue(desktop.is_file())
+        self.assertEqual((profile / "session").read_text(), "PRESERVE")
+        # Without the cross-version dependency, retirement may proceed, but
+        # it must never remove the newer launcher, desktop entry or profile.
+        (newer / "chrome-sandbox").unlink()
+        retired = subprocess.run(["bash", str(script)], env=env,
+                                capture_output=True, text=True, timeout=12)
+        self.assertEqual(retired.returncode, 0, retired.stderr)
+        self.assertFalse(old.exists())
+        self.assertTrue(newer.exists())
+        self.assertTrue(launcher.is_file())
+        self.assertTrue(desktop.is_file())
+        self.assertEqual((profile / "session").read_text(), "PRESERVE")
+
+    @unittest.skipUnless(os.name == "posix", "Linux runtime/symlink semantics")
+    def test_uninstall_runtime_symlink_fails_before_any_mutation(self):
+        home = self.root / "uninstall-symlink-home"
+        base = home / ".local" / "share" / "chatgpt-cef-v2"
+        base.mkdir(parents=True)
+        outside = self.root / "uninstall-outside-data"
+        outside.mkdir()
+        (outside / "sentinel").write_text("DO_NOT_TOUCH", encoding="utf-8")
+        uninstall_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        (base / f"runtime-v{uninstall_version}").symlink_to(outside, target_is_directory=True)
+        env = {**os.environ, "HOME": str(home)}
+        p = subprocess.run(["bash", str(ROOT / "scripts" / "uninstall-local.sh")],
+                           env=env, capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("UNINSTALL_RUNTIME_REPARSE_REFUSED", p.stderr)
+        self.assertEqual((outside / "sentinel").read_text(), "DO_NOT_TOUCH")
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
