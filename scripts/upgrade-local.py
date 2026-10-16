@@ -2,7 +2,8 @@
 """Fail-closed activation of an ALREADY STAGED, distinct-version Linux CEF runtime.
 
 This does NOT create a privileged sandbox, sign a package, delete a runtime,
-inspect a profile, or authorize a release. Release owner must verify the source
+inspect a profile, or authorize a release. The owner-approved package must be
+pre-staged at RUNTIME/.approved-release.zip with an independently verified SHA. Release owner must verify the source
 of the expected digests and stage a correct root-owned SUID helper separately.
 """
 import argparse
@@ -301,7 +302,7 @@ def action(home, mode):
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     modes = p.add_mutually_exclusive_group(required=True)
     modes.add_argument("--activate", action="store_true")
     modes.add_argument("--rollback", action="store_true")
@@ -309,22 +310,27 @@ def main():
     p.add_argument("--version")
     p.add_argument("--binary-sha256")
     p.add_argument("--sandbox-sha256")
-    p.add_argument("--package", type=Path)
     p.add_argument("--package-sha256")
     p.add_argument("--source-commit")
-    p.add_argument("--home", type=Path, default=Path.home())
     a = p.parse_args()
     try:
+        require(os.geteuid() != 0, "activation must run unprivileged; provision SUID separately")
+        home = Path.home()
         if a.activate:
             require(all((a.version, a.binary_sha256, a.sandbox_sha256,
-                         a.package, a.package_sha256, a.source_commit)),
-                    "activate requires explicit source/version and trusted exact digests")
+                         a.package_sha256, a.source_commit)),
+                    "activate requires distinct version/source and trusted exact digests")
+            require(bool(VERSION.fullmatch(a.version)), "invalid version")
+            # Deliberately NO CLI-controlled path: only a pre-staged package at
+            # this fixed filename inside the checked versioned runtime.
+            package = (home / ".local/share/chatgpt-cef-v2"
+                       / ("runtime-v" + a.version) / ".approved-release.zip")
             print("UPGRADE_STAGED=" + str(activate(
-                a.home, a.version, a.binary_sha256, a.sandbox_sha256,
-                a.package, a.package_sha256, a.source_commit)))
+                home, a.version, a.binary_sha256, a.sandbox_sha256,
+                package, a.package_sha256, a.source_commit)))
             print("UPGRADE_PENDING_OWNER_ACCEPTANCE=YES")
         else:
-            action(a.home, "rollback" if a.rollback else "finalize")
+            action(home, "rollback" if a.rollback else "finalize")
             print("UPGRADE_" + ("ROLLBACK" if a.rollback else "FINALIZED") + "=PASS")
     except (UpgradeError, OSError, ValueError, subprocess.CalledProcessError, KeyError) as exc:
         print("UPGRADE_FAIL_CLOSED=" + str(exc), file=sys.stderr)

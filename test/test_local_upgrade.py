@@ -38,7 +38,7 @@ class TransactionTests(unittest.TestCase):
         self.sandbox = self.runtime / "chrome-sandbox"
         self.sandbox.write_bytes(b"fake helper bytes; NEVER SUID\n")
         self.sandbox.chmod(0o755)
-        self.package = root / "package.zip"
+        self.package = self.runtime / ".approved-release.zip"
         self.package.write_bytes(b"immutable package fixture\n")
         self.profile = self.home / ".config/chatgpt-cef-v2"
         self.profile.mkdir(parents=True)
@@ -194,6 +194,15 @@ class TransactionTests(unittest.TestCase):
             with self.assertRaisesRegex(upgrade.UpgradeError, "no trusted rollback"):
                 upgrade.action(self.home, "rollback")
         self.assertIn(b"runtime-v0.8.4", self.launcher.read_bytes())
+
+    def test_cli_refuses_arbitrary_filesystem_target_arguments(self):
+        from subprocess import run
+        from sys import executable
+        for opt in ("--home", "--package"):
+            proc = run([executable, str(SCRIPT), "--activate", opt, "/tmp/foreign"],
+                       capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("unrecognized arguments", proc.stderr)
 
     def test_symlinked_parent_is_denied(self):
         self.desktop.unlink()
