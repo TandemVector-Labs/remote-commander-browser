@@ -60,3 +60,11 @@ test('native fullscreen makes both vertical rail and horizontal tab strip access
  assert.match(src,/SetAccelerator\(kAccelOrientation, kVKeyE, true, true, false, true\)/);
  assert.match(src,/tab_selector_visible=/);
 });
+
+test('compact rail badge labels and full-height background are native',()=>{
+ assert.match(src,/CompactTabLabel\(tab\.id\)/);
+ assert.match(src,/sidebar_layout_->SetFlexForView\(sidebar_fill_, 1\)/);
+ assert.match(src,/sidebar_fill_->GetBounds\(\)\.height > 80/);
+ assert.match(src,/sidebar_fill_->GetBackgroundColor\(\) == UiSidebarPalette\(\)\.background/);
+ assert.match(src,/class AppController::SidebarSurfaceDelegate : public CefPanelDelegate/);
+});

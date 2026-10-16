@@ -92,10 +92,12 @@ class AppController {
   class ButtonDelegateImpl;
   class BrowserViewDelegateImpl;
   class FixedPanelDelegate;
+  class SidebarSurfaceDelegate;
 
   void BuildWindowUI();
   bool VerticalTabsVisible() const;
   int SidebarWidth() const;
+  std::string CompactTabLabel(int tab_id) const;
   bool SidebarCompactEffective() const;
   void RunVerticalTabsSelfTest();
   void RunFullscreenTabsSelfTest();
@@ -130,6 +132,9 @@ class AppController {
   CefRefPtr<CefPanel> tab_strip_;
   CefRefPtr<CefPanel> vertical_tab_strip_;
   CefRefPtr<CefPanel> sidebar_;
+  CefRefPtr<CefPanel> sidebar_fill_;
+  CefRefPtr<CefBoxLayout> sidebar_layout_;
+  CefRefPtr<SidebarSurfaceDelegate> sidebar_surface_delegate_;
   CefRefPtr<CefPanel> header_spacer_;
   CefRefPtr<CefOverlayController> sidebar_overlay_;
   CefRefPtr<CefPanel> content_;

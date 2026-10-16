@@ -103,6 +103,7 @@ const rc_ui::SidebarPalette& UiSidebarPalette() {
 
 constexpr char kUIFont[] = "Vazirmatn, Noto Sans Arabic, DejaVu Sans, 12px";
 constexpr char kUIBoldFont[] = "Vazirmatn, Noto Sans Arabic, DejaVu Sans, Bold 12px";
+constexpr char kCompactTabFont[] = "DejaVu Sans, Bold 15px";
 
 std::string PathUtf8(const std::filesystem::path& path) {
 #if defined(__cpp_lib_char8_t)
@@ -404,6 +405,16 @@ class AppController::FixedPanelDelegate : public CefPanelDelegate {
   int width_;
   int height_;
   IMPLEMENT_REFCOUNTING(FixedPanelDelegate);
+};
+
+// Overlay-hosted native panels need a theme-restoring delegate so Chromium's
+// theme changes cannot reset the unused sidebar surface to the OS white.
+class AppController::SidebarSurfaceDelegate : public CefPanelDelegate {
+ public:
+  void OnThemeChanged(CefRefPtr<CefView> view) override {
+    if (view) view->SetBackgroundColor(UiSidebarPalette().background);
+  }
+  IMPLEMENT_REFCOUNTING(SidebarSurfaceDelegate);
 };
 
 class AppController::ButtonDelegateImpl : public CefButtonDelegate {
@@ -801,7 +812,8 @@ void AppController::BuildWindowUI() {
 
   // Native sidebar stays outside the web BrowserView overlays. It never
   // injects into ChatGPT content or touches the shared request context.
-  sidebar_ = CefPanel::CreatePanel(nullptr);
+  sidebar_surface_delegate_ = new SidebarSurfaceDelegate();
+  sidebar_ = CefPanel::CreatePanel(sidebar_surface_delegate_);
   sidebar_->SetBackgroundColor(UiSidebarPalette().background);
   CefBoxLayoutSettings sidebar_settings;
   sidebar_settings.horizontal = false;
@@ -810,8 +822,8 @@ void AppController::BuildWindowUI() {
   sidebar_settings.inside_border_vertical_spacing = 10;
   sidebar_settings.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
   sidebar_settings.default_flex = 0;
-  sidebar_->SetToBoxLayout(sidebar_settings);
-  vertical_tab_strip_ = CefPanel::CreatePanel(nullptr);
+  sidebar_layout_ = sidebar_->SetToBoxLayout(sidebar_settings);
+  vertical_tab_strip_ = CefPanel::CreatePanel(sidebar_surface_delegate_);
   vertical_tab_strip_->SetBackgroundColor(UiSidebarPalette().background);
   CefBoxLayoutSettings vertical_tabs;
   vertical_tabs.horizontal = false;
@@ -842,6 +854,13 @@ void AppController::BuildWindowUI() {
   sidebar_new_tab_button_ = sidebar_new;
   sidebar_->AddChildView(sidebar_new);
   sidebar_->AddChildView(vertical_tab_strip_);
+  // An explicitly painted flexible native child fills the unused rail area.
+  // Unlike a parent's transparent overlay, this keeps dark mode dark down
+  // the *entire height* of the window, even after theme or F11 changes.
+  sidebar_fill_ = CefPanel::CreatePanel(sidebar_surface_delegate_);
+  sidebar_fill_->SetBackgroundColor(UiSidebarPalette().background);
+  sidebar_->AddChildView(sidebar_fill_);
+  sidebar_layout_->SetFlexForView(sidebar_fill_, 1);
 
   content_ = CefPanel::CreatePanel(nullptr);
   content_->SetToFillLayout();
@@ -1324,6 +1343,10 @@ void AppController::RunVerticalTabsSelfTest() {
   ToggleSidebarCompact();
   tab = FindTabById(initial_active);
   const int compact_right = control_right();
+  const bool surface_ok = sidebar_fill_ && sidebar_ &&
+      sidebar_fill_->GetBackgroundColor() == UiSidebarPalette().background &&
+      sidebar_->GetBackgroundColor() == UiSidebarPalette().background &&
+      sidebar_fill_->GetBounds().height > 80;
   const bool compact_ok = sidebar_compact_ && sidebar_overlay_ &&
       sidebar_overlay_->GetBounds().width == kSidebarCompactWidth &&
       tab && tab->overlay && tab->overlay->GetBounds().x == kSidebarCompactWidth &&
@@ -1351,10 +1374,11 @@ void AppController::RunVerticalTabsSelfTest() {
     if (!initial_vertical) ToggleTabsOrientation();
   }
   LOG(WARNING) << "CGWA_VERTICAL_TABS_SELFTEST "
-               << (expanded_ok && compact_ok && horizontal_ok && anchored
-                       ? "PASS" : "FAIL")
+               << (expanded_ok && compact_ok && horizontal_ok && anchored &&
+                   surface_ok ? "PASS" : "FAIL")
                << " vertical=" << expanded_ok
                << " compact=" << compact_ok
+               << " surface=" << surface_ok
                << " horizontal=" << horizontal_ok
                << " controls_anchored=" << anchored
                << " close_right_h=" << horizontal_right
@@ -1641,6 +1665,8 @@ void AppController::ApplyNativeTheme() {
   if (vertical_tab_strip_)
     vertical_tab_strip_->SetBackgroundColor(UiSidebarPalette().background);
   if (sidebar_) sidebar_->SetBackgroundColor(UiSidebarPalette().background);
+  if (sidebar_fill_)
+    sidebar_fill_->SetBackgroundColor(UiSidebarPalette().background);
   if (header_spacer_) header_spacer_->SetBackgroundColor(UiPalette().header);
   if (sidebar_toggle_button_) {
     sidebar_toggle_button_->SetBackgroundColor(UiSidebarPalette().background);
@@ -1906,6 +1932,13 @@ void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
   if (id >= kTabButtonBase) { ActivateTab(id - kTabButtonBase); return; }
 }
 
+std::string AppController::CompactTabLabel(int tab_id) const {
+  const auto it = std::find_if(tabs_.begin(), tabs_.end(),
+      [tab_id](const Tab& item) { return item.id == tab_id; });
+  return it == tabs_.end() ? "?" :
+      std::to_string(std::distance(tabs_.begin(), it) + 1);
+}
+
 void AppController::RebuildTabStrip() {
   if (!tab_strip_ || !vertical_tab_strip_) return;
   tab_strip_->SetBackgroundColor(UiPalette().header);
@@ -1973,7 +2006,7 @@ void AppController::RebuildTabStrip() {
 
     auto title = CefLabelButton::CreateLabelButton(
         button_delegate_, vertical && SidebarCompactEffective()
-                              ? "◉" : ShortTitle(tab.title));
+                              ? CompactTabLabel(tab.id) : ShortTitle(tab.title));
     title->SetID(kTabButtonBase + tab.id);
     title->SetBackgroundColor(vertical
         ? (tab.id == active_tab_id_ ? UiSidebarPalette().active : UiSidebarPalette().tab)
@@ -1981,7 +2014,9 @@ void AppController::RebuildTabStrip() {
     title->SetEnabledTextColors(vertical
         ? (tab.id == active_tab_id_ ? UiSidebarPalette().text : UiSidebarPalette().muted)
         : (tab.id == active_tab_id_ ? UiPalette().activeText : UiPalette().muted));
-    title->SetFontList(tab.id == active_tab_id_ ? kUIBoldFont : kUIFont);
+    title->SetFontList(vertical && SidebarCompactEffective()
+                           ? kCompactTabFont :
+                       (tab.id == active_tab_id_ ? kUIBoldFont : kUIFont));
     title->SetInkDropEnabled(true);
     title->SetTooltipText(tab.title);
     title->SetAccessibleName("Activate tab " + std::to_string(i + 1) +
@@ -2030,7 +2065,7 @@ void AppController::RebuildTabStrip() {
 void AppController::UpdateTabButton(Tab& tab) {
   if (!tab.title_button) return;
   std::string text = VerticalTabsVisible() && SidebarCompactEffective()
-                         ? "◉" : ShortTitle(tab.title);
+                         ? CompactTabLabel(tab.id) : ShortTitle(tab.title);
   if (tab.loading && !(VerticalTabsVisible() && SidebarCompactEffective()))
     text = "• " + text;
   tab.title_button->SetText(text);
@@ -2042,7 +2077,9 @@ void AppController::UpdateTabButton(Tab& tab) {
   tab.title_button->SetEnabledTextColors(vertical
       ? (active ? UiSidebarPalette().text : UiSidebarPalette().muted)
       : (active ? UiPalette().activeText : UiPalette().muted));
-  tab.title_button->SetFontList(active ? kUIBoldFont : kUIFont);
+  tab.title_button->SetFontList(
+      vertical && SidebarCompactEffective()
+          ? kCompactTabFont : (active ? kUIBoldFont : kUIFont));
   if (tab.close_button) {
     tab.close_button->SetBackgroundColor(vertical
         ? (active ? UiSidebarPalette().active : UiSidebarPalette().tab)
@@ -2200,6 +2237,9 @@ void AppController::OnWindowDestroyed() {
   vertical_tab_strip_ = nullptr;
   sidebar_ = nullptr;
   sidebar_overlay_ = nullptr;
+  sidebar_fill_ = nullptr;
+  sidebar_layout_ = nullptr;
+  sidebar_surface_delegate_ = nullptr;
   sidebar_toggle_button_ = nullptr;
   sidebar_new_tab_button_ = nullptr;
   header_spacer_ = nullptr;
