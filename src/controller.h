@@ -37,6 +37,7 @@ class AppController {
   void CloseActiveTab();
   void ToggleFullscreen();
   void ToggleTheme();
+  void ToggleTabsOrientation();
   void ApplyNativeTheme();
   void ToggleMaximize();
   void Minimize();
@@ -92,6 +93,8 @@ class AppController {
   class FixedPanelDelegate;
 
   void BuildWindowUI();
+  bool VerticalTabsVisible() const;
+  void RunVerticalTabsSelfTest();
   void BuildHeaderControls();
   void UpdateDraggableRegions();
   void RebuildTabStrip();
@@ -121,6 +124,9 @@ class AppController {
   CefRefPtr<CefWindow> window_;
   CefRefPtr<CefPanel> header_;
   CefRefPtr<CefPanel> tab_strip_;
+  CefRefPtr<CefPanel> vertical_tab_strip_;
+  CefRefPtr<CefPanel> sidebar_;
+  CefRefPtr<CefOverlayController> sidebar_overlay_;
   CefRefPtr<CefPanel> content_;
   CefRefPtr<CefPanel> companion_panel_;
   CefRefPtr<CefOverlayController> companion_overlay_;
@@ -128,6 +134,7 @@ class AppController {
   std::vector<CefRefPtr<CefLabelButton>> header_buttons_;
   CefRefPtr<CefLabelButton> tab_switcher_button_;
   CefRefPtr<CefLabelButton> theme_button_;
+  CefRefPtr<CefLabelButton> orientation_button_;
   int visible_tab_capacity_ = -1;
   companion::Monitor companion_monitor_;
   companion::Automation companion_automation_;
@@ -148,6 +155,7 @@ class AppController {
   int active_tab_id_ = 0;
   rc_ui::TabDragIntent tab_drag_;
   bool fullscreen_ = false;
+  bool vertical_tabs_ = false;
   bool companion_visible_ = false;
   bool companion_tick_scheduled_ = false;
   bool closing_ = false;

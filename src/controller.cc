@@ -57,6 +57,9 @@ constexpr int kThemeButton = 27;
 constexpr int kMoveTabLeftButton = 28;
 constexpr int kMoveTabRightButton = 29;
 constexpr int kCompanionRefreshButton = 30;
+constexpr int kTabsOrientationButton = 31;
+constexpr int kSidebarWidth = 228;
+constexpr int kSidebarMinWindowWidth = 550;
 constexpr int kCompanionRowBase = 300;
 constexpr int kCompanionRowCount = 18;
 constexpr int kCompanionWidth = 360;
@@ -134,6 +137,52 @@ bool CommitStateFile(const std::string& temp, const std::string& path) {
   if (::chmod(temp.c_str(), 0600) != 0) return false;
   return ::rename(temp.c_str(), path.c_str()) == 0;
 #endif
+}
+
+std::string TabsOrientationStatePath() {
+  return PathUtf8(std::filesystem::u8path(StatePath()).parent_path() /
+                  "ui-tabs-orientation.state");
+}
+
+bool ReadVerticalTabsPreference() {
+  const auto path = std::filesystem::u8path(TabsOrientationStatePath());
+  std::error_code ec;
+  const auto status = std::filesystem::symlink_status(path, ec);
+  if (ec || !std::filesystem::is_regular_file(status) ||
+      std::filesystem::is_symlink(status)) return false;
+  std::ifstream input(path);
+  std::string value;
+  return std::getline(input, value) && value == "vertical";
+}
+
+bool SaveVerticalTabsPreference(bool vertical) {
+  const std::string path = TabsOrientationStatePath(), temp = path + ".tmp";
+  std::error_code ec;
+  const auto parent = std::filesystem::u8path(path).parent_path();
+  std::filesystem::create_directories(parent, ec);
+  if (ec) return false;
+  const auto safe = [](const std::string& name, bool must_be_absent) {
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(
+        std::filesystem::u8path(name), error);
+    if (error == std::errc::no_such_file_or_directory) return true;
+    if (error) return false;
+    if (!std::filesystem::exists(status)) return true;
+    if (std::filesystem::is_symlink(status)) return false;
+    return !must_be_absent && std::filesystem::is_regular_file(status);
+  };
+  if (!safe(path, false) || !safe(temp, true)) return false;
+  std::ofstream output(std::filesystem::u8path(temp), std::ios::trunc);
+  if (!output) return false;
+  output << (vertical ? "vertical\n" : "horizontal\n");
+  output.flush();
+  const bool valid = output.good();
+  output.close();
+  if (!valid || !CommitStateFile(temp, path)) {
+    RemoveStateFile(temp);
+    return false;
+  }
+  return true;
 }
 
 std::string ThemeStatePath() {
@@ -322,6 +371,7 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
     const int id = view->GetID();
     if (id == kBrandButton) return CefSize(kBrandWidth, 40);
     if (id == kCompanionButton) return CefSize(108, 40);
+    if (id == kTabsOrientationButton) return CefSize(86, 40);
     if (id == kThemeButton) return CefSize(80, 40);
     if (id == kTabSwitcherButton) return CefSize(58, 40);
     if (id == kCompanionRefreshButton) return CefSize(kCompanionWidth - 24, 40);
@@ -406,6 +456,7 @@ AppController::AppController() {
   browser_view_delegate_ = new BrowserViewDelegateImpl(this);
   header_delegate_ = new FixedPanelDelegate(1240, kHeaderHeight);
   g_ui_theme = ReadThemePreference();
+  vertical_tabs_ = ReadVerticalTabsPreference();
 }
 
 AppController::~AppController() {
@@ -471,6 +522,8 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
 
   if (command_line && command_line->HasSwitch("companion-self-test"))
     RunCompanionSelfTest();
+  if (command_line && command_line->HasSwitch("vertical-tabs-self-test"))
+    RunVerticalTabsSelfTest();
 
   if (command_line && command_line->HasSwitch("self-test"))
     RunBackgroundSelfTest();
@@ -617,7 +670,15 @@ void AppController::OnWindowBoundsChanged(const CefRect& new_bounds) {
     if (tabs_[i].id == active_tab_id_) active_index = static_cast<int>(i);
   const auto visible = rc_ui::SelectTabs(
       new_bounds.width, static_cast<int>(tabs_.size()), active_index);
-  if (visible.capacity != visible_tab_capacity_) RebuildTabStrip();
+  const bool use_vertical = VerticalTabsVisible();
+  const auto current = use_vertical
+      ? rc_ui::SelectVerticalTabs(
+            new_bounds.height - (fullscreen_ ? 0 : kHeaderHeight),
+            static_cast<int>(tabs_.size()), active_index)
+      : visible;
+  if (current.capacity != visible_tab_capacity_ ||
+      (vertical_tab_strip_ && vertical_tab_strip_->IsVisible() != use_vertical))
+    RebuildTabStrip();
   LayoutTabOverlays();
   UpdateDraggableRegions();
   if (companion_visible_) UpdateCompanionPanel();
@@ -628,6 +689,7 @@ void AppController::OnWindowFullscreenTransition(bool is_completed) {
   if (!is_completed || !window_) return;
   fullscreen_ = window_->IsFullscreen();
   if (header_) header_->SetVisible(!fullscreen_);
+  RebuildTabStrip();
   window_->Layout();
   LayoutTabOverlays();
   UpdateDraggableRegions();
@@ -663,6 +725,28 @@ void AppController::BuildWindowUI() {
   tabs_layout.default_flex = 0;
   tab_layout_ = tab_strip_->SetToBoxLayout(tabs_layout);
 
+  // Native sidebar stays outside the web BrowserView overlays. It never
+  // injects into ChatGPT content or touches the shared request context.
+  sidebar_ = CefPanel::CreatePanel(nullptr);
+  sidebar_->SetBackgroundColor(UiPalette().header);
+  CefBoxLayoutSettings sidebar_settings;
+  sidebar_settings.horizontal = false;
+  sidebar_settings.between_child_spacing = 2;
+  sidebar_settings.inside_border_horizontal_spacing = 8;
+  sidebar_settings.inside_border_vertical_spacing = 8;
+  sidebar_settings.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
+  sidebar_settings.default_flex = 0;
+  sidebar_->SetToBoxLayout(sidebar_settings);
+  vertical_tab_strip_ = CefPanel::CreatePanel(nullptr);
+  vertical_tab_strip_->SetBackgroundColor(UiPalette().header);
+  CefBoxLayoutSettings vertical_tabs;
+  vertical_tabs.horizontal = false;
+  vertical_tabs.between_child_spacing = 2;
+  vertical_tabs.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
+  vertical_tabs.default_flex = 0;
+  vertical_tab_strip_->SetToBoxLayout(vertical_tabs);
+  sidebar_->AddChildView(vertical_tab_strip_);
+
   content_ = CefPanel::CreatePanel(nullptr);
   content_->SetToFillLayout();
   content_->SetBackgroundColor(UiPalette().content);
@@ -671,6 +755,10 @@ void AppController::BuildWindowUI() {
   window_->AddChildView(content_);
   window_layout_->SetFlexForView(content_, 1);
   BuildHeaderControls();
+  sidebar_overlay_ = window_->AddOverlayView(
+      sidebar_, CEF_DOCKING_MODE_CUSTOM, true);
+  if (sidebar_overlay_ && sidebar_overlay_->IsValid())
+    sidebar_overlay_->SetVisible(false);
   BuildCompanionPanel();
 
   UpdateDraggableRegions();
@@ -710,6 +798,17 @@ void AppController::BuildHeaderControls() {
 
   header_->AddChildView(tab_strip_);
   header_layout_->SetFlexForView(tab_strip_, 1);
+
+  auto orientation = make_button(
+      kTabsOrientationButton, vertical_tabs_ ? "Tabs ↔" : "Tabs ↕",
+      UiPalette().softAccent);
+  orientation->SetTooltipText(
+      "Switch between horizontal and vertical native tab layouts");
+  orientation->SetAccessibleName(
+      vertical_tabs_ ? "Use horizontal tabs" : "Use vertical tabs");
+  orientation_button_ = orientation;
+  header_buttons_.push_back(orientation);
+  header_->AddChildView(orientation);
 
   auto switcher = make_button(kTabSwitcherButton, "1 / 1", UiPalette().softAccent);
   switcher->SetEnabledTextColors(UiPalette().activeText);
@@ -1032,6 +1131,57 @@ void AppController::SetActiveTabInternal(int tab_id) {
   UpdateCompanionPanel();
 }
 
+bool AppController::VerticalTabsVisible() const {
+  if (!vertical_tabs_ || fullscreen_ || !window_) return false;
+  return window_->GetClientAreaBoundsInScreen().width >= kSidebarMinWindowWidth;
+}
+
+void AppController::ToggleTabsOrientation() {
+  CEF_REQUIRE_UI_THREAD();
+  if (closing_ || !window_ || window_->IsClosed()) return;
+  const bool next = !vertical_tabs_;
+  if (!SaveVerticalTabsPreference(next)) {
+    LOG(ERROR) << "CGWA_TAB_LAYOUT_PREF_DENIED";
+    return;
+  }
+  vertical_tabs_ = next;
+  tab_drag_.Cancel();
+  visible_tab_capacity_ = -1;
+  RebuildTabStrip();
+  LayoutTabOverlays();
+  UpdateDraggableRegions();
+  LOG(WARNING) << "CGWA_TAB_LAYOUT_APPLIED "
+               << (vertical_tabs_ ? "VERTICAL" : "HORIZONTAL");
+}
+
+void AppController::RunVerticalTabsSelfTest() {
+  CEF_REQUIRE_UI_THREAD();
+  const bool initial = vertical_tabs_;
+  const size_t initial_count = tabs_.size();
+  const int initial_active = active_tab_id_;
+  if (vertical_tabs_) ToggleTabsOrientation();
+  ToggleTabsOrientation();
+  const Tab* tab = FindTabById(initial_active);
+  const bool vertical_ok = vertical_tabs_ && VerticalTabsVisible() &&
+      sidebar_overlay_ && sidebar_overlay_->IsValid() &&
+      sidebar_overlay_->IsVisible() && tab && tab->overlay &&
+      tab->overlay->IsValid() &&
+      tab->overlay->GetBounds().x == kSidebarWidth &&
+      tab->overlay->GetBounds().width > 0;
+  ToggleTabsOrientation();
+  tab = FindTabById(initial_active);
+  const bool horizontal_ok = !vertical_tabs_ && sidebar_overlay_ &&
+      !sidebar_overlay_->IsVisible() && tab && tab->overlay &&
+      tab->overlay->GetBounds().x == 0 &&
+      tabs_.size() == initial_count && active_tab_id_ == initial_active;
+  if (initial) ToggleTabsOrientation();
+  LOG(WARNING) << "CGWA_VERTICAL_TABS_SELFTEST "
+               << (vertical_ok && horizontal_ok ? "PASS" : "FAIL")
+               << " vertical=" << vertical_ok
+               << " horizontal=" << horizontal_ok
+               << " unchanged_tabs=" << (tabs_.size() == initial_count);
+}
+
 void AppController::LayoutTabOverlays() {
   CEF_REQUIRE_UI_THREAD();
   if (!window_ || window_->IsClosed()) return;
@@ -1040,15 +1190,24 @@ void AppController::LayoutTabOverlays() {
   const int top = header_visible ? kHeaderHeight : 0;
   const int width = std::max(1, client_bounds.width);
   const int height = std::max(1, client_bounds.height - top);
-  const bool show_companion = companion_visible_ && !fullscreen_ && width >= kCompanionWidth + 320;
-  const int browser_width = show_companion ? width - kCompanionWidth : width;
-  const CefRect bounds(0, top, browser_width, height);
+  const bool show_sidebar = VerticalTabsVisible();
+  const int left = show_sidebar ? kSidebarWidth : 0;
+  const bool show_companion = companion_visible_ && !fullscreen_ &&
+      width - left >= kCompanionWidth + 320;
+  const int browser_width =
+      std::max(1, width - left - (show_companion ? kCompanionWidth : 0));
+  const CefRect bounds(left, top, browser_width, height);
+  if (sidebar_overlay_ && sidebar_overlay_->IsValid()) {
+    sidebar_overlay_->SetBounds(CefRect(0, top, kSidebarWidth, height));
+    sidebar_overlay_->SetVisible(show_sidebar);
+  }
   for (auto& tab : tabs_) {
     if (tab.overlay && tab.overlay->IsValid())
       tab.overlay->SetBounds(bounds);
   }
   if (companion_overlay_ && companion_overlay_->IsValid()) {
-    companion_overlay_->SetBounds(CefRect(browser_width, top, kCompanionWidth, height));
+    companion_overlay_->SetBounds(
+        CefRect(left + browser_width, top, kCompanionWidth, height));
     companion_overlay_->SetVisible(show_companion);
   }
 }
@@ -1295,6 +1454,9 @@ void AppController::ApplyNativeTheme() {
   window_->SetBackgroundColor(UiPalette().header);
   if (header_) header_->SetBackgroundColor(UiPalette().header);
   if (tab_strip_) tab_strip_->SetBackgroundColor(UiPalette().header);
+  if (vertical_tab_strip_)
+    vertical_tab_strip_->SetBackgroundColor(UiPalette().header);
+  if (sidebar_) sidebar_->SetBackgroundColor(UiPalette().header);
   if (content_) content_->SetBackgroundColor(UiPalette().content);
   if (companion_panel_) companion_panel_->SetBackgroundColor(UiPalette().header);
   if (theme_button_) {
@@ -1488,6 +1650,7 @@ void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
   if (id == kMoveTabLeftButton) { MoveActiveTab(-1); return; }
   if (id == kMoveTabRightButton) { MoveActiveTab(1); return; }
   if (id == kCompanionButton) { ToggleCompanionPanel(); return; }
+  if (id == kTabsOrientationButton) { ToggleTabsOrientation(); return; }
   if (id == kThemeButton) { ToggleTheme(); return; }
   if (id == kCompanionRefreshButton) { RefreshCompanion(); return; }
   if (id == kFullscreenButton) { ToggleFullscreen(); return; }
@@ -1499,15 +1662,30 @@ void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
 }
 
 void AppController::RebuildTabStrip() {
-  if (!tab_strip_) return;
+  if (!tab_strip_ || !vertical_tab_strip_) return;
   tab_strip_->SetBackgroundColor(UiPalette().header);
+  vertical_tab_strip_->SetBackgroundColor(UiPalette().header);
   tab_strip_->RemoveAllChildViews();
+  vertical_tab_strip_->RemoveAllChildViews();
+  const bool vertical = VerticalTabsVisible();
+  tab_strip_->SetVisible(!vertical);
+  vertical_tab_strip_->SetVisible(vertical);
+  if (orientation_button_) {
+    orientation_button_->SetText(vertical_tabs_ ? "Tabs ↔" : "Tabs ↕");
+    orientation_button_->SetAccessibleName(
+        vertical_tabs_ ? "Use horizontal tabs" : "Use vertical tabs");
+  }
   int active_index = 0;
   for (size_t i = 0; i < tabs_.size(); ++i)
     if (tabs_[i].id == active_tab_id_) active_index = static_cast<int>(i);
   const int logical_width = window_ ? window_->GetClientAreaBoundsInScreen().width : 1240;
-  const auto visible = rc_ui::SelectTabs(logical_width,
-                                         static_cast<int>(tabs_.size()), active_index);
+  const auto visible = vertical
+      ? rc_ui::SelectVerticalTabs(
+            window_->GetClientAreaBoundsInScreen().height -
+                (fullscreen_ ? 0 : kHeaderHeight),
+            static_cast<int>(tabs_.size()), active_index)
+      : rc_ui::SelectTabs(logical_width,
+                          static_cast<int>(tabs_.size()), active_index);
   visible_tab_capacity_ = visible.capacity;
   for (size_t i = 0; i < tabs_.size(); ++i) {
     auto& tab = tabs_[i];
@@ -1551,7 +1729,10 @@ void AppController::RebuildTabStrip() {
     tab.ui_panel = item;
     tab.title_button = title;
     tab.close_button = close;
-    tab_strip_->AddChildView(item);
+    if (vertical)
+      vertical_tab_strip_->AddChildView(item);
+    else
+      tab_strip_->AddChildView(item);
   }
   if (tab_switcher_button_) {
     const auto label = tabs_.empty() ? "0 / 0" :
@@ -1563,6 +1744,8 @@ void AppController::RebuildTabStrip() {
         "Tab " + label + "; activate next tab");
   }
   tab_strip_->Layout();
+  vertical_tab_strip_->Layout();
+  if (sidebar_) sidebar_->Layout();
   if (header_) {
     header_->Layout();
     UpdateDraggableRegions();
@@ -1730,6 +1913,10 @@ void AppController::OnWindowDestroyed() {
   window_ = nullptr;
   header_ = nullptr;
   tab_strip_ = nullptr;
+  vertical_tab_strip_ = nullptr;
+  sidebar_ = nullptr;
+  sidebar_overlay_ = nullptr;
+  orientation_button_ = nullptr;
   content_ = nullptr;
   theme_button_ = nullptr;
   companion_overlay_ = nullptr;
