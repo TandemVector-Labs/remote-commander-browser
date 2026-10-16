@@ -73,7 +73,7 @@ constexpr int kTabButtonBase = 1000;
 constexpr int kTabCloseBase = 2000;
 
 constexpr int kHeaderHeight = 52;
-constexpr int kBrandWidth = 164;
+constexpr int kBrandWidth = 108;
 
 constexpr int kAccelNewTab = 100;
 constexpr int kAccelCloseTab = 101;
@@ -103,8 +103,8 @@ const rc_ui::SidebarPalette& UiSidebarPalette() {
   return rc_ui::Sidebar(g_ui_theme);
 }
 
-constexpr char kUIFont[] = "Vazirmatn, Noto Sans Arabic, DejaVu Sans, 12px";
-constexpr char kUIBoldFont[] = "Vazirmatn, Noto Sans Arabic, DejaVu Sans, Bold 12px";
+constexpr char kUIFont[] = "Inter, Vazirmatn, Noto Sans Arabic, DejaVu Sans, 12px";
+constexpr char kUIBoldFont[] = "Inter, Vazirmatn, Noto Sans Arabic, DejaVu Sans, Bold 12px";
 constexpr char kCompactTabFont[] = "DejaVu Sans, Bold 15px";
 
 std::string PathUtf8(const std::filesystem::path& path) {
@@ -436,22 +436,24 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
   }
   CefSize GetPreferredSize(CefRefPtr<CefView> view) override {
     const int id = view->GetID();
-    if (id == kBrandButton) return CefSize(kBrandWidth, 40);
-    if (id == kCompanionButton) return CefSize(108, 40);
-    if (id == kTabsOrientationButton) return CefSize(86, 40);
+    if (id == kBrandButton) return CefSize(kBrandWidth, 36);
+    if (id == kCompanionButton) return CefSize(112, 36);
+    if (id == kTabsOrientationButton) return CefSize(42, 36);
     if (id == kSidebarToggleButton || id == kSidebarNewTabButton)
       return CefSize(owner_ && owner_->SidebarCompactEffective() ? 34 : 214, 36);
-    if (id == kThemeButton) return CefSize(80, 40);
-    if (id == kTabSwitcherButton) return CefSize(58, 40);
-    if (id == kCompanionRefreshButton) return CefSize(kCompanionWidth - 24, 40);
+    if (id == kThemeButton) return CefSize(42, 36);
+    if (id == kTabSwitcherButton) return CefSize(60, 36);
+    if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
+      return CefSize(34, 36);
+    if (id == kCompanionRefreshButton) return CefSize(kCompanionWidth - 24, 36);
     if (id >= kCompanionRowBase && id < kCompanionRowBase + kCompanionRowCount)
       return CefSize(kCompanionWidth - 24, 30);
-    if (id >= kTabCloseBase) return CefSize(28, 38);
+    if (id >= kTabCloseBase) return CefSize(28, 36);
     if (id >= kTabButtonBase)
       return CefSize(owner_ && owner_->VerticalTabsVisible()
                          ? (owner_->SidebarCompactEffective() ? 34 : 184)
-                         : 135, 38);
-    if (id >= kNewTabButton && id <= kCloseWindowButton) return CefSize(36, 40);
+                         : 135, 36);
+    if (id >= kNewTabButton && id <= kCloseWindowButton) return CefSize(34, 36);
     return CefSize(80, 34);
   }
  private:
@@ -805,8 +807,8 @@ void AppController::BuildWindowUI() {
   header_->SetBackgroundColor(UiPalette().header);
   CefBoxLayoutSettings horizontal;
   horizontal.horizontal = true;
-  horizontal.between_child_spacing = 2;
-  horizontal.inside_border_horizontal_spacing = 8;
+  horizontal.between_child_spacing = 4;
+  horizontal.inside_border_horizontal_spacing = 10;
   horizontal.inside_border_vertical_spacing = 4;
   horizontal.cross_axis_alignment = CEF_AXIS_ALIGNMENT_CENTER;
   horizontal.default_flex = 0;
@@ -828,7 +830,8 @@ void AppController::BuildWindowUI() {
   sidebar_->SetBackgroundColor(UiSidebarPalette().background);
   CefBoxLayoutSettings sidebar_settings;
   sidebar_settings.horizontal = false;
-  sidebar_settings.between_child_spacing = 7;
+  // Brave-inspired narrow rail: keep ample touch targets, less blank space.
+  sidebar_settings.between_child_spacing = 5;
   sidebar_settings.inside_border_horizontal_spacing = 10;
   sidebar_settings.inside_border_vertical_spacing = 10;
   sidebar_settings.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
@@ -838,12 +841,12 @@ void AppController::BuildWindowUI() {
   vertical_tab_strip_->SetBackgroundColor(UiSidebarPalette().background);
   CefBoxLayoutSettings vertical_tabs;
   vertical_tabs.horizontal = false;
-  vertical_tabs.between_child_spacing = 6;
+  vertical_tabs.between_child_spacing = 4;
   vertical_tabs.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
   vertical_tabs.default_flex = 0;
   vertical_tab_strip_->SetToBoxLayout(vertical_tabs);
   auto sidebar_toggle = CefLabelButton::CreateLabelButton(
-      button_delegate_, sidebar_compact_ ? "»" : "«  Tabs");
+      button_delegate_, sidebar_compact_ ? "»" : "‹   Tabs");
   sidebar_toggle->SetID(kSidebarToggleButton);
   sidebar_toggle->SetBackgroundColor(UiSidebarPalette().background);
   sidebar_toggle->SetEnabledTextColors(UiSidebarPalette().text);
@@ -854,7 +857,7 @@ void AppController::BuildWindowUI() {
   sidebar_toggle_button_ = sidebar_toggle;
   sidebar_->AddChildView(sidebar_toggle);
   auto sidebar_new = CefLabelButton::CreateLabelButton(
-      button_delegate_, sidebar_compact_ ? "+" : "+  New Tab");
+      button_delegate_, sidebar_compact_ ? "+" : "+   New tab");
   sidebar_new->SetID(kSidebarNewTabButton);
   sidebar_new->SetBackgroundColor(UiSidebarPalette().background);
   sidebar_new->SetEnabledTextColors(UiSidebarPalette().text);
@@ -915,7 +918,8 @@ void AppController::BuildHeaderControls() {
     return button;
   };
 
-  auto brand = make_button(kBrandButton, "RC  /  Browser", UiPalette().header);
+  // Compact product mark; identity remains available to screen readers.
+  auto brand = make_button(kBrandButton, "◆  RC", UiPalette().header);
   brand->SetFontList(kUIBoldFont);
   brand->SetEnabledTextColors(UiPalette().text);
   brand->SetAccessibleName("Remote Commander Browser application");
@@ -927,7 +931,7 @@ void AppController::BuildHeaderControls() {
   header_layout_->SetFlexForView(tab_strip_, 1);
 
   auto orientation = make_button(
-      kTabsOrientationButton, vertical_tabs_ ? "Tabs ↔" : "Tabs ↕",
+      kTabsOrientationButton, vertical_tabs_ ? "⇥" : "☰",
       UiPalette().softAccent);
   orientation->SetTooltipText(
       "Switch between horizontal and vertical native tab layouts");
@@ -964,14 +968,14 @@ void AppController::BuildHeaderControls() {
   header_buttons_.push_back(add);
   header_->AddChildView(add);
 
-  auto companion = make_button(kCompanionButton, "Commander", UiPalette().button);
+  auto companion = make_button(kCompanionButton, "◈ Commander", UiPalette().button);
   companion->SetTooltipText("پنل مشاهده Commander (Ctrl+Shift+C)");
   companion->SetAccessibleName("Toggle read-only Commander companion");
   header_buttons_.push_back(companion);
   header_->AddChildView(companion);
 
   auto theme = make_button(
-      kThemeButton, g_ui_theme == rc_ui::ThemeMode::Dark ? "Dark" : "Light",
+      kThemeButton, g_ui_theme == rc_ui::ThemeMode::Dark ? "☾" : "☼",
       UiPalette().softAccent);
   theme->SetTooltipText("Switch Light/Dark appearance (private browser setting)");
   theme->SetAccessibleName("Switch browser theme");
@@ -1730,7 +1734,7 @@ void AppController::ApplyNativeTheme() {
   if (companion_panel_) companion_panel_->SetBackgroundColor(UiPalette().header);
   if (theme_button_) {
     const bool dark = g_ui_theme == rc_ui::ThemeMode::Dark;
-    theme_button_->SetText(dark ? "Dark" : "Light");
+    theme_button_->SetText(dark ? "☾" : "☼");
     theme_button_->SetTooltipText(
         dark ? "Dark appearance. Click to switch to Light."
              : "Light appearance. Click to switch to Dark.");
@@ -2096,20 +2100,23 @@ void AppController::RebuildTabStrip() {
   for (const auto& button : header_buttons_) {
     if (!button) continue;
     const int id = button->GetID();
-    if (id == kTabSwitcherButton || id == kMoveTabLeftButton ||
-        id == kMoveTabRightButton || id == kNewTabButton)
+    if (id == kTabSwitcherButton || id == kNewTabButton)
       button->SetVisible(!vertical);
+    // Hide inapplicable tab reorder arrows, but retain mouse access when
+    // there are multiple horizontal tabs. All keyboard shortcuts remain.
+    if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
+      button->SetVisible(!vertical && tabs_.size() > 1);
   }
   const bool compact = SidebarCompactEffective();
   if (sidebar_toggle_button_) {
-    sidebar_toggle_button_->SetText(compact ? "»" : "«  Tabs");
+    sidebar_toggle_button_->SetText(compact ? "»" : "‹   Tabs");
     sidebar_toggle_button_->SetAccessibleName(
         compact ? "Expand vertical tabs" : "Collapse vertical tabs");
   }
   if (sidebar_new_tab_button_)
-    sidebar_new_tab_button_->SetText(compact ? "+" : "+  New Tab");
+    sidebar_new_tab_button_->SetText(compact ? "+" : "+   New tab");
   if (orientation_button_) {
-    orientation_button_->SetText(vertical_tabs_ ? "Tabs ↔" : "Tabs ↕");
+    orientation_button_->SetText(vertical_tabs_ ? "⇥" : "☰");
     orientation_button_->SetAccessibleName(
         vertical_tabs_ ? "Use horizontal tabs" : "Use vertical tabs");
   }
