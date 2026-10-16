@@ -14,7 +14,7 @@ test('vertical toggle is a native CEF control, not page script',()=>{
  assert.doesNotMatch(src,/--no-sandbox|--disable-web-security|DeleteAllCookies/);
 });
 test('native sidebar reserves nonoverlapping BrowserView and companion bounds',()=>{
- assert.match(src,/const int left = show_sidebar \? kSidebarWidth : 0;/);
+ assert.match(src,/const int left = show_sidebar \? SidebarWidth\(\) : 0;/);
  assert.match(src,/CefRect bounds\(left, top, browser_width, height\)/);
  assert.match(src,/CefRect\(left \+ browser_width, top, kCompanionWidth, height\)/);
  assert.match(src,/sidebar_overlay_->SetVisible\(show_sidebar\)/);
@@ -32,4 +32,21 @@ test('session identity and tab order remain unchanged while toggling',()=>{
  assert.doesNotMatch(fn,/NewTab\(|CloseTab\(|SaveSessionState\(|CreateBrowserView\(|DeleteAllCookies/);
  assert.match(src,/CGWA_VERTICAL_TABS_SELFTEST/);
  assert.match(src,/tab->overlay->GetBounds\(\).x == kSidebarWidth/);
+});
+
+test('Firefox-like rail toggles compact and expanded without a new web context',()=>{
+ assert.match(src,/kSidebarCompactWidth = 54;/);
+ assert.match(src,/kSidebarWidth = 246;/);
+ assert.match(src,/ui-tabs-compact\.state/);
+ assert.match(src,/SaveSidebarCompactPreference\(next\)/);
+ assert.match(src,/ToggleSidebarCompact\(\)/);
+ assert.match(src,/close->SetVisible\(!vertical \|\| !sidebar_compact_\)/);
+ assert.match(src,/kSidebarBackground = 0xFF101114u/);
+});
+test('window controls remain pinned at right across all orientations',()=>{
+ assert.match(src,/header_spacer_ = CefPanel::CreatePanel/);
+ assert.match(src,/header_spacer_->SetVisible\(vertical\)/);
+ assert.match(src,/horizontal_right == expanded_right/);
+ assert.match(src,/horizontal_right == compact_right/);
+ assert.match(src,/horizontal_right == restored_right/);
 });

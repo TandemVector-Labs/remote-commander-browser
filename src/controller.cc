@@ -58,7 +58,17 @@ constexpr int kMoveTabLeftButton = 28;
 constexpr int kMoveTabRightButton = 29;
 constexpr int kCompanionRefreshButton = 30;
 constexpr int kTabsOrientationButton = 31;
-constexpr int kSidebarWidth = 228;
+constexpr int kSidebarWidth = 246;
+constexpr int kSidebarCompactWidth = 54;
+constexpr int kSidebarToggleButton = 32;
+constexpr int kSidebarNewTabButton = 33;
+// Distinct app-level rail, matching the contrast of browser-native sidebars.
+constexpr cef_color_t kSidebarBackground = 0xFF101114u;
+constexpr cef_color_t kSidebarTab = 0xFF101114u;
+constexpr cef_color_t kSidebarHover = 0xFF27292Du;
+constexpr cef_color_t kSidebarActive = 0xFF35373Bu;
+constexpr cef_color_t kSidebarText = 0xFFF3F4F6u;
+constexpr cef_color_t kSidebarMuted = 0xFFC0C2C6u;
 constexpr int kSidebarMinWindowWidth = 550;
 constexpr int kCompanionRowBase = 300;
 constexpr int kCompanionRowCount = 18;
@@ -178,6 +188,51 @@ bool SaveVerticalTabsPreference(bool vertical) {
   output.flush();
   const bool valid = output.good();
   output.close();
+  if (!valid || !CommitStateFile(temp, path)) {
+    RemoveStateFile(temp);
+    return false;
+  }
+  return true;
+}
+
+std::string SidebarCompactStatePath() {
+  return PathUtf8(std::filesystem::u8path(StatePath()).parent_path() /
+                  "ui-tabs-compact.state");
+}
+bool ReadSidebarCompactPreference() {
+  const auto path = std::filesystem::u8path(SidebarCompactStatePath());
+  std::error_code error;
+  const auto stat = std::filesystem::symlink_status(path, error);
+  if (error || !std::filesystem::is_regular_file(stat) ||
+      std::filesystem::is_symlink(stat)) return false;
+  std::ifstream input(path);
+  std::string mode;
+  return std::getline(input, mode) && mode == "compact";
+}
+bool SaveSidebarCompactPreference(bool compact) {
+  const std::string path = SidebarCompactStatePath();
+  const std::string temp = path + ".tmp";
+  std::error_code error;
+  std::filesystem::create_directories(
+      std::filesystem::u8path(path).parent_path(), error);
+  if (error) return false;
+  auto safe = [](const std::string& name, bool absent) {
+    std::error_code ec;
+    const auto stat = std::filesystem::symlink_status(
+        std::filesystem::u8path(name), ec);
+    if (ec == std::errc::no_such_file_or_directory) return true;
+    if (ec) return false;
+    if (std::filesystem::is_symlink(stat)) return false;
+    if (!std::filesystem::exists(stat)) return true;
+    return !absent && std::filesystem::is_regular_file(stat);
+  };
+  if (!safe(path, false) || !safe(temp, true)) return false;
+  std::ofstream out(std::filesystem::u8path(temp), std::ios::trunc);
+  if (!out) return false;
+  out << (compact ? "compact\n" : "expanded\n");
+  out.flush();
+  const bool valid = out.good();
+  out.close();
   if (!valid || !CommitStateFile(temp, path)) {
     RemoveStateFile(temp);
     return false;
@@ -372,13 +427,18 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
     if (id == kBrandButton) return CefSize(kBrandWidth, 40);
     if (id == kCompanionButton) return CefSize(108, 40);
     if (id == kTabsOrientationButton) return CefSize(86, 40);
+    if (id == kSidebarToggleButton || id == kSidebarNewTabButton)
+      return CefSize(owner_ && owner_->sidebar_compact_ ? 34 : 214, 36);
     if (id == kThemeButton) return CefSize(80, 40);
     if (id == kTabSwitcherButton) return CefSize(58, 40);
     if (id == kCompanionRefreshButton) return CefSize(kCompanionWidth - 24, 40);
     if (id >= kCompanionRowBase && id < kCompanionRowBase + kCompanionRowCount)
       return CefSize(kCompanionWidth - 24, 30);
     if (id >= kTabCloseBase) return CefSize(28, 38);
-    if (id >= kTabButtonBase) return CefSize(135, 38);
+    if (id >= kTabButtonBase)
+      return CefSize(owner_ && owner_->VerticalTabsVisible()
+                         ? (owner_->sidebar_compact_ ? 34 : 184)
+                         : 135, 38);
     if (id >= kNewTabButton && id <= kCloseWindowButton) return CefSize(36, 40);
     return CefSize(80, 34);
   }
@@ -457,6 +517,7 @@ AppController::AppController() {
   header_delegate_ = new FixedPanelDelegate(1240, kHeaderHeight);
   g_ui_theme = ReadThemePreference();
   vertical_tabs_ = ReadVerticalTabsPreference();
+  sidebar_compact_ = ReadSidebarCompactPreference();
 }
 
 AppController::~AppController() {
@@ -728,7 +789,7 @@ void AppController::BuildWindowUI() {
   // Native sidebar stays outside the web BrowserView overlays. It never
   // injects into ChatGPT content or touches the shared request context.
   sidebar_ = CefPanel::CreatePanel(nullptr);
-  sidebar_->SetBackgroundColor(UiPalette().header);
+  sidebar_->SetBackgroundColor(kSidebarBackground);
   CefBoxLayoutSettings sidebar_settings;
   sidebar_settings.horizontal = false;
   sidebar_settings.between_child_spacing = 2;
@@ -738,13 +799,35 @@ void AppController::BuildWindowUI() {
   sidebar_settings.default_flex = 0;
   sidebar_->SetToBoxLayout(sidebar_settings);
   vertical_tab_strip_ = CefPanel::CreatePanel(nullptr);
-  vertical_tab_strip_->SetBackgroundColor(UiPalette().header);
+  vertical_tab_strip_->SetBackgroundColor(kSidebarBackground);
   CefBoxLayoutSettings vertical_tabs;
   vertical_tabs.horizontal = false;
   vertical_tabs.between_child_spacing = 2;
   vertical_tabs.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
   vertical_tabs.default_flex = 0;
   vertical_tab_strip_->SetToBoxLayout(vertical_tabs);
+  auto sidebar_toggle = CefLabelButton::CreateLabelButton(
+      button_delegate_, sidebar_compact_ ? "»" : "«  Tabs");
+  sidebar_toggle->SetID(kSidebarToggleButton);
+  sidebar_toggle->SetBackgroundColor(kSidebarBackground);
+  sidebar_toggle->SetEnabledTextColors(kSidebarText);
+  sidebar_toggle->SetFontList(kUIBoldFont);
+  sidebar_toggle->SetInkDropEnabled(true);
+  sidebar_toggle->SetTooltipText("Expand / collapse vertical tabs");
+  sidebar_toggle->SetAccessibleName("Collapse or expand tab sidebar");
+  sidebar_toggle_button_ = sidebar_toggle;
+  sidebar_->AddChildView(sidebar_toggle);
+  auto sidebar_new = CefLabelButton::CreateLabelButton(
+      button_delegate_, sidebar_compact_ ? "+" : "+  New Tab");
+  sidebar_new->SetID(kSidebarNewTabButton);
+  sidebar_new->SetBackgroundColor(kSidebarBackground);
+  sidebar_new->SetEnabledTextColors(kSidebarText);
+  sidebar_new->SetFontList(kUIFont);
+  sidebar_new->SetInkDropEnabled(true);
+  sidebar_new->SetTooltipText("New tab (Ctrl+T)");
+  sidebar_new->SetAccessibleName("New tab");
+  sidebar_new_tab_button_ = sidebar_new;
+  sidebar_->AddChildView(sidebar_new);
   sidebar_->AddChildView(vertical_tab_strip_);
 
   content_ = CefPanel::CreatePanel(nullptr);
@@ -851,6 +934,14 @@ void AppController::BuildHeaderControls() {
   theme_button_ = theme;
   header_buttons_.push_back(theme);
   header_->AddChildView(theme);
+
+  // The trailing flexible region anchors window controls to the *right edge*
+  // in both orientations. The hidden horizontal strip must not leave them
+  // floating in the middle of the window.
+  header_spacer_ = CefPanel::CreatePanel(nullptr);
+  header_spacer_->SetBackgroundColor(UiPalette().header);
+  header_->AddChildView(header_spacer_);
+  header_layout_->SetFlexForView(header_spacer_, 1);
 
   auto full = make_button(kFullscreenButton, "⛶", UiPalette().button);
   full->SetTooltipText("Fullscreen (F11)");
@@ -1136,6 +1227,28 @@ bool AppController::VerticalTabsVisible() const {
   return window_->GetClientAreaBoundsInScreen().width >= kSidebarMinWindowWidth;
 }
 
+int AppController::SidebarWidth() const {
+  return sidebar_compact_ ? kSidebarCompactWidth : kSidebarWidth;
+}
+
+void AppController::ToggleSidebarCompact() {
+  CEF_REQUIRE_UI_THREAD();
+  if (closing_ || !VerticalTabsVisible()) return;
+  const bool next = !sidebar_compact_;
+  if (!SaveSidebarCompactPreference(next)) {
+    LOG(ERROR) << "CGWA_SIDEBAR_PREF_DENIED";
+    return;
+  }
+  sidebar_compact_ = next;
+  tab_drag_.Cancel();
+  visible_tab_capacity_ = -1;
+  RebuildTabStrip();
+  LayoutTabOverlays();
+  UpdateDraggableRegions();
+  LOG(WARNING) << "CGWA_SIDEBAR_MODE "
+               << (sidebar_compact_ ? "COMPACT" : "EXPANDED");
+}
+
 void AppController::ToggleTabsOrientation() {
   CEF_REQUIRE_UI_THREAD();
   if (closing_ || !window_ || window_->IsClosed()) return;
@@ -1156,29 +1269,75 @@ void AppController::ToggleTabsOrientation() {
 
 void AppController::RunVerticalTabsSelfTest() {
   CEF_REQUIRE_UI_THREAD();
-  const bool initial = vertical_tabs_;
+  const bool initial_vertical = vertical_tabs_;
+  const bool initial_compact = sidebar_compact_;
   const size_t initial_count = tabs_.size();
   const int initial_active = active_tab_id_;
+  auto control_right = [&]() -> int {
+    if (!window_ || !header_) return -1;
+    window_->Layout();
+    header_->Layout();
+    const auto it = std::find_if(header_buttons_.begin(),
+        header_buttons_.end(), [](const CefRefPtr<CefLabelButton>& item) {
+          return item && item->GetID() == kCloseWindowButton;
+        });
+    if (it == header_buttons_.end()) return -1;
+    const CefRect r = (*it)->GetBoundsInScreen();
+    return r.x + r.width;
+  };
   if (vertical_tabs_) ToggleTabsOrientation();
+  const int horizontal_right = control_right();
   ToggleTabsOrientation();
+  if (sidebar_compact_) ToggleSidebarCompact();
   const Tab* tab = FindTabById(initial_active);
-  const bool vertical_ok = vertical_tabs_ && VerticalTabsVisible() &&
+  const int expanded_right = control_right();
+  const bool expanded_ok = vertical_tabs_ && VerticalTabsVisible() &&
       sidebar_overlay_ && sidebar_overlay_->IsValid() &&
-      sidebar_overlay_->IsVisible() && tab && tab->overlay &&
-      tab->overlay->IsValid() &&
-      tab->overlay->GetBounds().x == kSidebarWidth &&
-      tab->overlay->GetBounds().width > 0;
+      sidebar_overlay_->IsVisible() && sidebar_ &&
+      sidebar_overlay_->GetBounds().width == kSidebarWidth &&
+      tab && tab->overlay && tab->overlay->IsValid() &&
+      tab->overlay->GetBounds().x == kSidebarWidth;
+  ToggleSidebarCompact();
+  tab = FindTabById(initial_active);
+  const int compact_right = control_right();
+  const bool compact_ok = sidebar_compact_ && sidebar_overlay_ &&
+      sidebar_overlay_->GetBounds().width == kSidebarCompactWidth &&
+      tab && tab->overlay && tab->overlay->GetBounds().x == kSidebarCompactWidth &&
+      tab->title_button && tab->title_button->IsVisible() &&
+      tab->close_button && !tab->close_button->IsVisible();
+  ToggleSidebarCompact();
   ToggleTabsOrientation();
   tab = FindTabById(initial_active);
+  const int restored_right = control_right();
   const bool horizontal_ok = !vertical_tabs_ && sidebar_overlay_ &&
       !sidebar_overlay_->IsVisible() && tab && tab->overlay &&
       tab->overlay->GetBounds().x == 0 &&
       tabs_.size() == initial_count && active_tab_id_ == initial_active;
-  if (initial) ToggleTabsOrientation();
+  const int screen_right = window_->GetClientAreaBoundsInScreen().x +
+                            window_->GetClientAreaBoundsInScreen().width;
+  const bool anchored = horizontal_right > 0 &&
+      screen_right - horizontal_right <= 40 &&
+      horizontal_right == expanded_right &&
+      horizontal_right == compact_right &&
+      horizontal_right == restored_right;
+  if (initial_vertical) ToggleTabsOrientation();
+  if (initial_compact) {
+    if (!vertical_tabs_) ToggleTabsOrientation();
+    ToggleSidebarCompact();
+    if (!initial_vertical) ToggleTabsOrientation();
+  }
   LOG(WARNING) << "CGWA_VERTICAL_TABS_SELFTEST "
-               << (vertical_ok && horizontal_ok ? "PASS" : "FAIL")
-               << " vertical=" << vertical_ok
+               << (expanded_ok && compact_ok && horizontal_ok && anchored
+                       ? "PASS" : "FAIL")
+               << " vertical=" << expanded_ok
+               << " compact=" << compact_ok
                << " horizontal=" << horizontal_ok
+               << " controls_anchored=" << anchored
+               << " close_right_h=" << horizontal_right
+               << " close_right_v=" << expanded_right
+               << " close_right_c=" << compact_right
+               << " close_right_restored=" << restored_right
+               << " viewport_right=" << screen_right
                << " unchanged_tabs=" << (tabs_.size() == initial_count);
 }
 
@@ -1191,15 +1350,16 @@ void AppController::LayoutTabOverlays() {
   const int width = std::max(1, client_bounds.width);
   const int height = std::max(1, client_bounds.height - top);
   const bool show_sidebar = VerticalTabsVisible();
-  const int left = show_sidebar ? kSidebarWidth : 0;
+  const int left = show_sidebar ? SidebarWidth() : 0;
   const bool show_companion = companion_visible_ && !fullscreen_ &&
       width - left >= kCompanionWidth + 320;
   const int browser_width =
       std::max(1, width - left - (show_companion ? kCompanionWidth : 0));
   const CefRect bounds(left, top, browser_width, height);
   if (sidebar_overlay_ && sidebar_overlay_->IsValid()) {
-    sidebar_overlay_->SetBounds(CefRect(0, top, kSidebarWidth, height));
+    sidebar_overlay_->SetBounds(CefRect(0, top, left, height));
     sidebar_overlay_->SetVisible(show_sidebar);
+    if (show_sidebar && sidebar_) sidebar_->Layout();
   }
   for (auto& tab : tabs_) {
     if (tab.overlay && tab.overlay->IsValid())
@@ -1455,8 +1615,13 @@ void AppController::ApplyNativeTheme() {
   if (header_) header_->SetBackgroundColor(UiPalette().header);
   if (tab_strip_) tab_strip_->SetBackgroundColor(UiPalette().header);
   if (vertical_tab_strip_)
-    vertical_tab_strip_->SetBackgroundColor(UiPalette().header);
-  if (sidebar_) sidebar_->SetBackgroundColor(UiPalette().header);
+    vertical_tab_strip_->SetBackgroundColor(kSidebarBackground);
+  if (sidebar_) sidebar_->SetBackgroundColor(kSidebarBackground);
+  if (header_spacer_) header_spacer_->SetBackgroundColor(UiPalette().header);
+  if (sidebar_toggle_button_)
+    sidebar_toggle_button_->SetBackgroundColor(kSidebarBackground);
+  if (sidebar_new_tab_button_)
+    sidebar_new_tab_button_->SetBackgroundColor(kSidebarBackground);
   if (content_) content_->SetBackgroundColor(UiPalette().content);
   if (companion_panel_) companion_panel_->SetBackgroundColor(UiPalette().header);
   if (theme_button_) {
@@ -1612,7 +1777,10 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
   cef_color_t bg = hot ? UiPalette().buttonHover : UiPalette().button;
   cef_color_t fg = hot ? UiPalette().text : UiPalette().muted;
 
-  if (id == kBrandButton) {
+  if (id == kSidebarToggleButton || id == kSidebarNewTabButton) {
+    bg = hot ? kSidebarHover : kSidebarBackground;
+    fg = kSidebarText;
+  } else if (id == kBrandButton) {
     bg = UiPalette().header;
     fg = UiPalette().text;
   } else if (id == kNewTabButton || id == kTabSwitcherButton) {
@@ -1636,6 +1804,13 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
     fg = active ? UiPalette().activeText : (hot ? UiPalette().text : UiPalette().muted);
   }
 
+  if (VerticalTabsVisible() && id >= kTabButtonBase) {
+    const int tab_id = id >= kTabCloseBase
+                           ? id - kTabCloseBase : id - kTabButtonBase;
+    const bool active = tab_id == active_tab_id_;
+    bg = hot ? kSidebarHover : (active ? kSidebarActive : kSidebarTab);
+    fg = active ? kSidebarText : kSidebarMuted;
+  }
   button->SetBackgroundColor(bg);
   if (auto label = button->AsLabelButton())
     label->SetEnabledTextColors(fg);
@@ -1651,6 +1826,8 @@ void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
   if (id == kMoveTabRightButton) { MoveActiveTab(1); return; }
   if (id == kCompanionButton) { ToggleCompanionPanel(); return; }
   if (id == kTabsOrientationButton) { ToggleTabsOrientation(); return; }
+  if (id == kSidebarToggleButton) { ToggleSidebarCompact(); return; }
+  if (id == kSidebarNewTabButton) { NewTab(); return; }
   if (id == kThemeButton) { ToggleTheme(); return; }
   if (id == kCompanionRefreshButton) { RefreshCompanion(); return; }
   if (id == kFullscreenButton) { ToggleFullscreen(); return; }
@@ -1664,12 +1841,31 @@ void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
 void AppController::RebuildTabStrip() {
   if (!tab_strip_ || !vertical_tab_strip_) return;
   tab_strip_->SetBackgroundColor(UiPalette().header);
-  vertical_tab_strip_->SetBackgroundColor(UiPalette().header);
+  vertical_tab_strip_->SetBackgroundColor(kSidebarBackground);
   tab_strip_->RemoveAllChildViews();
   vertical_tab_strip_->RemoveAllChildViews();
   const bool vertical = VerticalTabsVisible();
   tab_strip_->SetVisible(!vertical);
   vertical_tab_strip_->SetVisible(vertical);
+  // CEF BoxLayout retains a view's last preferred width when its flex is
+  // reduced to zero. Hide the inactive flex view instead, preventing the
+  // controls from drifting outside the window on repeated mode switches.
+  if (header_spacer_) header_spacer_->SetVisible(vertical);
+  // The native sidebar has its own New Tab and tab switching controls.
+  for (const auto& button : header_buttons_) {
+    if (!button) continue;
+    const int id = button->GetID();
+    if (id == kTabSwitcherButton || id == kMoveTabLeftButton ||
+        id == kMoveTabRightButton || id == kNewTabButton)
+      button->SetVisible(!vertical);
+  }
+  if (sidebar_toggle_button_) {
+    sidebar_toggle_button_->SetText(sidebar_compact_ ? "»" : "«  Tabs");
+    sidebar_toggle_button_->SetAccessibleName(
+        sidebar_compact_ ? "Expand vertical tabs" : "Collapse vertical tabs");
+  }
+  if (sidebar_new_tab_button_)
+    sidebar_new_tab_button_->SetText(sidebar_compact_ ? "+" : "+  New Tab");
   if (orientation_button_) {
     orientation_button_->SetText(vertical_tabs_ ? "Tabs ↔" : "Tabs ↕");
     orientation_button_->SetAccessibleName(
@@ -1703,12 +1899,19 @@ void AppController::RebuildTabStrip() {
     settings.between_child_spacing = 1;
     settings.cross_axis_alignment = CEF_AXIS_ALIGNMENT_CENTER;
     item->SetToBoxLayout(settings);
-    item->SetBackgroundColor(UiPalette().header);
+    item->SetBackgroundColor(vertical ? kSidebarBackground
+                                      : UiPalette().header);
 
-    auto title = CefLabelButton::CreateLabelButton(button_delegate_, ShortTitle(tab.title));
+    auto title = CefLabelButton::CreateLabelButton(
+        button_delegate_, vertical && sidebar_compact_
+                              ? "◎" : ShortTitle(tab.title));
     title->SetID(kTabButtonBase + tab.id);
-    title->SetBackgroundColor(tab.id == active_tab_id_ ? UiPalette().tabActive : UiPalette().tab);
-    title->SetEnabledTextColors(tab.id == active_tab_id_ ? UiPalette().activeText : UiPalette().muted);
+    title->SetBackgroundColor(vertical
+        ? (tab.id == active_tab_id_ ? kSidebarActive : kSidebarTab)
+        : (tab.id == active_tab_id_ ? UiPalette().tabActive : UiPalette().tab));
+    title->SetEnabledTextColors(vertical
+        ? (tab.id == active_tab_id_ ? kSidebarText : kSidebarMuted)
+        : (tab.id == active_tab_id_ ? UiPalette().activeText : UiPalette().muted));
     title->SetFontList(tab.id == active_tab_id_ ? kUIBoldFont : kUIFont);
     title->SetInkDropEnabled(true);
     title->SetTooltipText(tab.title);
@@ -1717,8 +1920,11 @@ void AppController::RebuildTabStrip() {
 
     auto close = CefLabelButton::CreateLabelButton(button_delegate_, "×");
     close->SetID(kTabCloseBase + tab.id);
-    close->SetBackgroundColor(tab.id == active_tab_id_ ? UiPalette().tabActive : UiPalette().tab);
-    close->SetEnabledTextColors(UiPalette().muted);
+    close->SetBackgroundColor(vertical
+        ? (tab.id == active_tab_id_ ? kSidebarActive : kSidebarTab)
+        : (tab.id == active_tab_id_ ? UiPalette().tabActive : UiPalette().tab));
+    close->SetEnabledTextColors(vertical ? kSidebarMuted : UiPalette().muted);
+    close->SetVisible(!vertical || !sidebar_compact_);
     close->SetFontList(kUIFont);
     close->SetTooltipText("Close tab");
     close->SetAccessibleName("Close tab " + std::to_string(i + 1));
@@ -1754,16 +1960,25 @@ void AppController::RebuildTabStrip() {
 
 void AppController::UpdateTabButton(Tab& tab) {
   if (!tab.title_button) return;
-  std::string text = ShortTitle(tab.title);
-  if (tab.loading) text = "• " + text;
+  std::string text = VerticalTabsVisible() && sidebar_compact_
+                         ? "◎" : ShortTitle(tab.title);
+  if (tab.loading && !(VerticalTabsVisible() && sidebar_compact_))
+    text = "• " + text;
   tab.title_button->SetText(text);
   const bool active = tab.id == active_tab_id_;
-  tab.title_button->SetBackgroundColor(active ? UiPalette().tabActive : UiPalette().tab);
-  tab.title_button->SetEnabledTextColors(active ? UiPalette().activeText : UiPalette().muted);
+  const bool vertical = VerticalTabsVisible();
+  tab.title_button->SetBackgroundColor(vertical
+      ? (active ? kSidebarActive : kSidebarTab)
+      : (active ? UiPalette().tabActive : UiPalette().tab));
+  tab.title_button->SetEnabledTextColors(vertical
+      ? (active ? kSidebarText : kSidebarMuted)
+      : (active ? UiPalette().activeText : UiPalette().muted));
   tab.title_button->SetFontList(active ? kUIBoldFont : kUIFont);
   if (tab.close_button) {
-    tab.close_button->SetBackgroundColor(active ? UiPalette().tabActive : UiPalette().tab);
-    tab.close_button->SetEnabledTextColors(UiPalette().muted);
+    tab.close_button->SetBackgroundColor(vertical
+        ? (active ? kSidebarActive : kSidebarTab)
+        : (active ? UiPalette().tabActive : UiPalette().tab));
+    tab.close_button->SetEnabledTextColors(vertical ? kSidebarMuted : UiPalette().muted);
   }
 }
 
@@ -1916,6 +2131,9 @@ void AppController::OnWindowDestroyed() {
   vertical_tab_strip_ = nullptr;
   sidebar_ = nullptr;
   sidebar_overlay_ = nullptr;
+  sidebar_toggle_button_ = nullptr;
+  sidebar_new_tab_button_ = nullptr;
+  header_spacer_ = nullptr;
   orientation_button_ = nullptr;
   content_ = nullptr;
   theme_button_ = nullptr;
