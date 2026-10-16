@@ -23,3 +23,20 @@ The parent PR already implements the visual palette, compact controls, actual sc
 References: PR #106 (design), PR #103 (Native tabs), PR #96 (CEF stack guard), Issue #105 (subprocess fatal).
 
 **Scope boundary:** The isolated Linux follow-up binary built from PR #106 does not yet contain the separate Linux CEF #3912 stack-guard fix from PR #96. Native runtime without that dependency is not qualified as clean; do not treat compiling as native acceptance.
+
+
+## Acceptance evidence — 2026-10-16 19:55 Tehran
+
+**Exact PR #107 commit `28247d5e40caca16ca61b9b40b7fc54e3254e05d`:** GitHub Actions `Build` run `38927721393` (Linux release build, real native X11 drag, companion checks) and `Windows native preview` run `38927720759` (Windows native lifecycle and isolated installer acceptance, Linux regression) both **concluded success**. Source-based tests: Node 44/44, Static/cppcheck, Release Integrity 16/16 and companion CTest 2/2.
+
+**Separate isolated Linux QA candidate only:** exact PR #107 source plus a *non-deployed* Linux-only `NO_STACK_PROTECTOR` annotation from PR #96, CEF 154 clean 217/217 Release build SHA-256 `ef073e1d09daf87154c871fd35233dbb0528c9ea30fbbae36bfd7fffbe9e27f6`. Preserved original root-owned 4755 Chromium sandbox; used a new unauthenticated temporary profile and Xvfb display (no session changes). Native window actually resized to **1280, 800, 650 logical pixels** via X11, with verified exact actual widths and image evidence below; native main and shutdown trigger exited 0 and fatal stdout/stderr was 0. A separate native run passed vertical, fullscreen and **24-cycle tab-lifetime** markers with main/trigger exit 0 and 0 fatal stdout/stderr.
+
+![1280-DIP actual native UI](screenshots/brave-responsive-qa-1280.png)
+
+![800-DIP actual native UI](screenshots/brave-responsive-qa-800.png)
+
+![650-DIP actual native UI](screenshots/brave-responsive-qa-650.png)
+
+Screenshots were cropped from **real CEF/Xvfb** in unauthenticated temporary QA, not generated. Visible 650px chrome retains its tab, tab creation, theme and window controls. These results close the **isolated Linux/X11 resize behavior** gate; they do **not** establish owner desktop/Wayland visual acceptance or signed Stable production readiness.
+
+**Open:** owner Emad's real desktop/RTL/accessibility and Brave appearance review, Linux + Windows feature integration (PR #96 → #103 → #106 → #107), release policy and transactional install/rollback. PR #107 stays Draft; deployed browser and ChatGPT/Brave profiles were not changed.
