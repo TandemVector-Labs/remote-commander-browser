@@ -153,7 +153,9 @@ jobs:
             [[ -f "$vertical_ci_profile/chrome_debug.log" ]] || { echo "VERTICAL_NATIVE_LOG_MISSING mode=$mode"; exit 43; }
             cp "$vertical_ci_profile/chrome_debug.log" ".qa/companion-native-vertical-$mode.log"
             [[ "$vertical_ci_rc" -eq 0 ]] || { echo "VERTICAL_NATIVE_RUNTIME_FAIL mode=$mode rc=$vertical_ci_rc"; exit 44; }
-            grep -q 'CGWA_COMPANION_SELFTEST PASS' ".qa/companion-native-vertical-$mode.log"
+            expected_compact=0
+            if [[ "$mode" == compact ]]; then expected_compact=1; fi
+            grep -q "CGWA_COMPANION_SELFTEST PASS.*vertical_tabs=1.*compact_rail=$expected_compact" ".qa/companion-native-vertical-$mode.log"
             grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' ".qa/companion-native-vertical-$mode.log"
             if grep -Eiq 'FATAL|GPU process isn.t usable|segfault|SIGSEGV|stack smashing|stack buffer overflow|AddressSanitizer|ThreadSanitizer' \
               ".qa/companion-native-vertical-$mode.log" ".qa/companion-native-vertical-$mode.out"; then

@@ -74,6 +74,8 @@ test('Companion self-test uses BrowserView right edge with horizontal and vertic
  assert.ok(fn);
  assert.match(fn,/active->overlay->GetBounds\(\)\.x \+\s*active->overlay->GetBounds\(\)\.width == companion_overlay_->GetBounds\(\)\.x/);
  assert.match(fn,/companion_overlay_->GetBounds\(\)\.width == kCompanionWidth/);
+ assert.match(fn,/" vertical_tabs=" << VerticalTabsVisible\(\)/);
+ assert.match(fn,/" compact_rail=" << \(VerticalTabsVisible\(\) && SidebarCompactEffective\(\)\)/);
  const layout=src.split('void AppController::LayoutTabOverlays() {')[1]?.split('void AppController::SaveSessionState()')[0];
  assert.ok(layout);
  assert.match(layout,/CefRect bounds\(left, top, browser_width, height\)/);

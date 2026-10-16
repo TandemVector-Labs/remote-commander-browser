@@ -1219,6 +1219,8 @@ void AppController::RunCompanionSelfTest() {
   const bool hidden = companion_overlay_ && companion_overlay_->IsValid() && !companion_overlay_->IsVisible();
   LOG(WARNING) << "CGWA_COMPANION_SELFTEST " << (shown && separate && companion_safe && hidden ? "PASS" : "FAIL")
     << " native_overlay=" << shown << " separate_bounds=" << separate
+    << " vertical_tabs=" << VerticalTabsVisible()
+    << " compact_rail=" << (VerticalTabsVisible() && SidebarCompactEffective())
     << " " << companion_check << "=" << companion_safe << " toggle_hidden=" << hidden;
 }
 
