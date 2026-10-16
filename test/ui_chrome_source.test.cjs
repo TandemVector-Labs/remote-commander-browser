@@ -17,7 +17,7 @@ test('native chrome height is one shared constant for header and BrowserView ove
 test('all eight restored tab states remain in the model, only controls are bounded',()=>{
  assert.match(layout,/SelectTabs\(int logical_width, int count, int active\)/);
  assert.match(controller,/tabs_\.size\(\) >= 8/);
- assert.match(controller,/!in_strip[\s\S]*tab\.ui_panel = nullptr/);
+ assert.match(controller,/if \(!in_strip\) continue;/);
  assert.match(controller,/tab_switcher_button_->SetText\(label\)/);
  assert.match(controller,/kAccelTab1 \+ i/);
  assert.match(controller,/if \(id == kTabSwitcherButton\) \{ CycleTab\(1\); return; \}/);

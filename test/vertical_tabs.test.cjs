@@ -62,7 +62,7 @@ test('native fullscreen makes both vertical rail and horizontal tab strip access
 });
 
 test('compact rail badge labels and full-height background are native',()=>{
- assert.match(src,/CompactTabLabel\(tab\.id\)/);
+ assert.match(src,/RoundedTabBadge\(tab.id, tab.id == active_tab_id_\)/);
  assert.match(src,/sidebar_layout_->SetFlexForView\(sidebar_fill_, 1\)/);
  assert.match(src,/sidebar_fill_->GetBounds\(\)\.height > 80/);
  assert.match(src,/sidebar_fill_->GetBackgroundColor\(\) == UiSidebarPalette\(\)\.background/);

@@ -1,6 +1,8 @@
 #pragma once
 #include "ui_tab_drag.h"
 
+#include <array>
+#include <chrono>
 #include <map>
 #include <string>
 #include <vector>
@@ -8,6 +10,7 @@
 #include "client.h"
 #include "commander_companion.h"
 #include "include/cef_browser.h"
+#include "include/cef_image.h"
 #include "include/cef_client.h"
 #include "include/views/cef_box_layout.h"
 #include "include/views/cef_browser_view.h"
@@ -97,13 +100,16 @@ class AppController {
   void BuildWindowUI();
   bool VerticalTabsVisible() const;
   int SidebarWidth() const;
-  std::string CompactTabLabel(int tab_id) const;
+  CefRefPtr<CefImage> RoundedTabBadge(int tab_id, bool active);
   bool SidebarCompactEffective() const;
   void RunVerticalTabsSelfTest();
   void RunFullscreenTabsSelfTest();
   void BuildHeaderControls();
   void UpdateDraggableRegions();
   void RebuildTabStrip();
+  void RetireTabUi(const Tab& tab);
+  void ReleaseRetiredUi();
+  void TabLifetimeSoakStep(int cycle);
   void UpdateTabButton(Tab& tab);
   void SetActiveTabInternal(int tab_id);
   void LayoutTabOverlays();
@@ -162,9 +168,19 @@ class AppController {
   CefRefPtr<FixedPanelDelegate> header_delegate_;
 
   CefRefPtr<AppClient> client_;
+  struct RetiredUi {
+    std::chrono::steady_clock::time_point created;
+    CefRefPtr<CefPanel> panel;
+    CefRefPtr<CefLabelButton> title;
+    CefRefPtr<CefLabelButton> close;
+  };
+  // Native circular badge assets; lazily rasterized once per color-state.
+  std::array<std::array<std::array<CefRefPtr<CefImage>, 8>, 2>, 2> tab_badges_{};
+  std::vector<RetiredUi> retired_ui_;
   std::vector<Tab> tabs_;
   int next_tab_id_ = 1;
   int active_tab_id_ = 0;
+  std::string saved_session_snapshot_;
   rc_ui::TabDragIntent tab_drag_;
   bool fullscreen_ = false;
   bool vertical_tabs_ = false;
