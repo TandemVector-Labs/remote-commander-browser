@@ -9,7 +9,7 @@ LAUNCHER="$HOME/.local/bin/chatgpt-cef-v2"
 DESKTOP="$HOME/.local/share/applications/chatgpt-cef-v2.desktop"
 
 # Do not let an old-version uninstall break a newer active SUID sandbox.
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'UNINSTALL_VERSION_INVALID\n' >&2; exit 40; }
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]] || { printf 'UNINSTALL_VERSION_INVALID\n' >&2; exit 40; }
 [[ ! -L "$RUNTIME" ]] || { printf 'UNINSTALL_RUNTIME_REPARSE_REFUSED\n' >&2; exit 41; }
 if [[ -d "$APPROOT" ]]; then
   for other in "$APPROOT"/runtime-v*; do
