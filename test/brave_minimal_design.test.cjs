@@ -43,7 +43,7 @@ test('Minimal native toolbar still exposes critical actions and shortcuts',()=>{
   assert.match(ui,/SetAccessibleName\("Close application"\)/);
   assert.match(ui,/SetAccelerator\(kAccelNewTab/);
   assert.match(ui,/SetAccelerator\(kAccelOrientation/);
-  assert.match(ui,/SetVisible\(!vertical && tabs_\.size\(\) > 1\)/);
+  assert.match(ui,/SetVisible\(!vertical && !compact_toolbar && tabs_\.size\(\) > 1\)/);
   assert.doesNotMatch(ui,/--no-sandbox|--disable-web-security|DeleteAllCookies/);
 });
 test('The layout remains native; page, profile and renderer untouched',()=>{
