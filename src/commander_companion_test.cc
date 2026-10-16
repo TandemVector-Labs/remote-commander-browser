@@ -27,6 +27,10 @@ std::string MonitorSnapshot() {
   return R"({"schema":1,"kind":"COMMANDER_LIVE_MONITOR","observedAtEpochMs":1000,"expiresAtEpochMs":11000,"identity":{"deviceName":"linux-host","profile":"default","version":"0.10.19","configSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","port":48832,"platform":"linux"},"gui":{"enabled":true,"available":true,"uncertain":false,"backend":"gnome-mutter-remote-desktop","sessionType":"wayland","reason":null,"capabilities":{"screenshot":true,"mouse":true,"keyboard":true,"focus":true}},"browser":{"enabled":true,"available":true,"uncertain":false,"backend":"chromium-cdp","reason":null},"workflows":{"enabled":true,"engineEnabled":true,"runCount":2},"extensions":{"count":2,"items":[{"id":"project-execution-brain","version":"1.3.1"},{"id":"remote-commander-linux","version":"1.3.4"}]},"operations":{"active":0,"lockedKeys":0}})";
 }
 
+std::string AutomationSnapshot() {
+  return R"({"schema":1,"kind":"COMMANDER_AUTOMATION_MONITOR","observedAtEpochMs":1000,"expiresAtEpochMs":11000,"configSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","automation":{"runnerConfigured":true,"automaticExecution":false,"localModel":"PROPOSAL_ONLY","workCredits":"DENY_IN_CORE","creditUsage":"UNVERIFIED"}})";
+}
+
 std::string UnknownSnapshot() {
   return R"({"schema":1,"kind":"COMMANDER_COMPANION_OBSERVATION","observedAtEpochMs":1000,"expiresAtEpochMs":2000,"producer":{"id":"remote-commander-companion","version":"1"},"identity":{"appId":null,"profile":"profile-test","deviceName":"renamed-device","version":"0.10.4","commit":null,"configSha256":null,"routeGeneration":null},"backend":{"state":"CONFIRMED","toolNames":["system_status","file_read"],"toolCatalogSha256":"5bb07faadcdc7512789e644acaedcdf9440cf633cc6437f9a774bce5767bf38a"},"currentChat":{"state":"UNKNOWN","conversationUrl":null,"appId":null,"toolNames":[],"skills":[],"plugins":[]},"project":{"state":"UNKNOWN","projectId":"project-test","root":"/workspace/project-test","revision":1,"nextAction":"AWAIT_AUTHORITATIVE_CHAT_OBSERVATION","evidenceSha256":null},"binding":{"appId":null,"accountId":null,"profileId":null,"workflowId":null,"projectRoot":null,"chatUrl":null},"reconciliation":{"state":"UNPROVEN","reasonCodes":["CHAT_OBSERVATION_MISSING"],"actionAllowed":false}})";
 }
@@ -102,6 +106,16 @@ void FileGuards(const std::string& fixture) {
   Check(!companion::ReadMonitor(root).valid && companion::ReadMonitor(root).blocked, "world-readable live monitor rejected");
   ::chmod(monitor_file.c_str(), 0600);
   ::unlink(monitor_file.c_str());
+  const std::string auto_file = root + "/commander-automation.json";
+  Check(companion::ReadAutomation(root).error == "AUTOMATION_MISSING",
+        "optional automation monitor missing is explicit");
+  Write(auto_file, AutomationSnapshot());
+  Check(companion::ReadAutomation(root).valid, "private automation monitor accepted");
+  ::chmod(auto_file.c_str(), 0644);
+  Check(!companion::ReadAutomation(root).valid &&
+        companion::ReadAutomation(root).blocked, "world-readable automation rejected");
+  ::chmod(auto_file.c_str(), 0600);
+  ::unlink(auto_file.c_str());
   const std::string binding_file = root + "/commander-binding.json";
   Write(binding_file, kBinding);
   Check(companion::ReadNativeBinding(root).valid, "independent private six-field binding accepted");
@@ -167,6 +181,29 @@ int main(int argc, char** argv) {
   Check(uncertain_browser.valid && Has(companion::DescribeMonitor(uncertain_browser,1500),"Background browser: UNCERTAIN"), "uncertain browser never renders READY");
   Check(!companion::ParseMonitor(Replace(MonitorSnapshot(), R"("active":0)", R"("active":0,"command":"forbidden")")).valid, "monitor operations schema rejects action fields");
   Check(!companion::ParseMonitor(Replace(MonitorSnapshot(), R"("count":2)", R"("count":3)")).valid, "monitor extension count must match bounded items");
+  const auto automation = companion::ParseAutomation(AutomationSnapshot());
+  Check(automation.valid && automation.runner_configured && !automation.automatic_execution,
+    "private automation contract accepts only configuration proof");
+  Check(companion::IsFresh(automation,1000) && !companion::IsFresh(automation,11000),
+    "private automation TTL exact boundary");
+  Check(Has(companion::DescribeAutomation(automation,monitor,1500),"Work credits: DENY_IN_CORE") &&
+        Has(companion::DescribeAutomation(automation,monitor,1500),"Automation: MANUAL_ONLY"),
+        "browser displays local policy without claiming automatic execution");
+  const auto wrong_sha=companion::ParseAutomation(Replace(AutomationSnapshot(),
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+  Check(wrong_sha.valid && Has(companion::DescribeAutomation(wrong_sha,monitor,1500),"UNVERIFIED"),
+        "mismatched device config never displays accepted automation");
+  Check(!companion::ParseAutomation(Replace(AutomationSnapshot(),
+    R"("creditUsage":"UNVERIFIED")",R"("creditUsage":"ZERO")")).valid,
+    "billing zero claim cannot be injected into companion");
+  Check(!companion::ParseAutomation(Replace(AutomationSnapshot(),
+    R"("automaticExecution":false)",R"("automaticExecution":true,"command":"OPEN_WORK")")).valid,
+    "unknown execution or action keys rejected");
+  Check(!companion::ParseAutomation(Replace(AutomationSnapshot(),
+    R"("runnerConfigured":true,"automaticExecution":false)",
+    R"("runnerConfigured":false,"automaticExecution":true)")).valid,
+    "automatic execution without configured runner fails shut");
 
   Check(u.valid && u.chat_state == "UNKNOWN" && u.project_id == "project-test", "unknown chat preserves known workflow metadata without tool claims");
   Check(b.valid && native.valid, "complete observed binding accepted");

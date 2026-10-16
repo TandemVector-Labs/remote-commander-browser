@@ -22,41 +22,61 @@ struct ThemePalette {
   std::uint32_t content;
 };
 inline constexpr ThemePalette kLightPalette{
-  0xFFF8FAFCu,
-  0xFFF8FAFCu,
-  0xFFEEF2F7u,
-  0xFFFFFFFFu,
-  0xFFF8FAFCu,
-  0xFFEEF2F7u,
-  0xFFEFF6FFu,
-  0xFF2563EBu,
+  0xFFF4F7FBu, // header
+  0xFFECF1F8u, // tab
+  0xFFE1EAF7u, // tab hover
+  0xFFD7E6FCu, // selected tab
+  0xFFF4F7FBu, // button
+  0xFFE1EAF7u, // button hover
+  0xFFDDEAFBu, // gentle primary tint
+  0xFF245AD5u,
   0xFF1D4ED8u,
-  0xFF0F172Au,
-  0xFF64748Bu,
-  0xFF1D4ED8u,
-  0xFFF8FAFCu,
-  0xFFFEE2E2u,
-  0xFFDC2626u,
+  0xFF17243Bu, // text
+  0xFF52637Cu, // secondary text
+  0xFF1E3A8Au, // text on tinted selection
+  0xFFF4F7FBu,
+  0xFFFDE6E7u,
+  0xFF9C1D30u,
   0xFFFFFFFFu
 };
 inline constexpr ThemePalette kDarkPalette{
-  0xFF0F172Au,
-  0xFF111E30u,
-  0xFF263449u,
-  0xFF27364Eu,
-  0xFF0F172Au,
-  0xFF27364Eu,
-  0xFF1B3658u,
+  0xFF161E2Bu,
+  0xFF202B3Cu,
+  0xFF283B53u,
+  0xFF304966u,
+  0xFF192536u,
+  0xFF283B53u,
+  0xFF244163u,
   0xFF3B82F6u,
   0xFF60A5FAu,
-  0xFFF8FAFCu,
-  0xFFCBD5E1u,
-  0xFFBFDBFEu,
-  0xFF0F172Au,
-  0xFF7F1D1Du,
-  0xFFFECACAu,
-  0xFF0B1220u
+  0xFFF0F5FDu,
+  0xFFC3D1E3u,
+  0xFFEAF3FFu,
+  0xFF161E2Bu,
+  0xFF6B2436u,
+  0xFFFFE9EBu,
+  0xFF101824u
 };
+struct SidebarPalette {
+  std::uint32_t background;
+  std::uint32_t tab;
+  std::uint32_t hover;
+  std::uint32_t active;
+  std::uint32_t text;
+  std::uint32_t muted;
+};
+// Light and dark use identical semantic roles, not disconnected hardcoded colors.
+inline constexpr SidebarPalette kLightSidebar{
+  0xFFF2F5FAu, 0xFFF7F9FDu, 0xFFE8F0FAu,
+  0xFFD9E8FAu, 0xFF1A2A43u, 0xFF536880u
+};
+inline constexpr SidebarPalette kDarkSidebar{
+  0xFF151C28u, 0xFF1C2738u, 0xFF2A394Fu,
+  0xFF344B6Bu, 0xFFF2F6FFu, 0xFFBECDE0u
+};
+inline constexpr const SidebarPalette& Sidebar(ThemeMode mode) {
+  return mode == ThemeMode::Dark ? kDarkSidebar : kLightSidebar;
+}
 inline constexpr const ThemePalette& Palette(ThemeMode mode) {
   return mode == ThemeMode::Dark ? kDarkPalette : kLightPalette;
 }
