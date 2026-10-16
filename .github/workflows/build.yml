@@ -34,6 +34,8 @@ jobs:
         run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
       - name: Fail-closed native child stderr regression (mocked binary)
         run: node --test test/runtime_selftest_stream.test.cjs
+      - name: Transactional local upgrade and rollback failure-injection regressions
+        run: python3 -m unittest discover -s test -p test_local_upgrade.py -v
       - name: Run native contract and Linux private-file guards
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1

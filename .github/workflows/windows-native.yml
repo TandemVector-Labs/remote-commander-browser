@@ -199,6 +199,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: CEF-free native UI source, Theme and tab-X contract
         run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
+      - name: Transactional local upgrade and rollback failure-injection regressions
+        run: python3 -m unittest discover -s test -p test_local_upgrade.py -v
 
       - name: Install Linux build dependencies
         run: |
