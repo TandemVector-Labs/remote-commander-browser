@@ -58,14 +58,45 @@ def verify(version: str, directory: Path) -> dict[str, str]:
             raise IntegrityError(f"Non-ASCII checksum manifest: {manifest}") from exc
         if len(lines) != 1:
             raise IntegrityError(f"Expected one checksum record: {manifest}")
-        match = re.fullmatch(r"([a-fA-F0-9]{64})  ([^\\/\r\n]+)", lines[0])
-        if match is None or match.group(2) != asset:
+        # The checksum record is ASCII and at most 512 bytes (guarded above).
+        # Exact-width slicing avoids a potentially costly regex on user-supplied
+        # manifest content while preserving the strict portable-name policy.
+        record = lines[0]
+        digest = record[:64]
+        checksum_name = record[66:]
+        if (
+            len(record) != 66 + len(asset)
+            or record[64:66] != "  "
+            or checksum_name != asset
+            or any(ch not in "0123456789abcdefABCDEF" for ch in digest)
+        ):
             raise IntegrityError(f"Checksum must name exactly the portable asset basename: {manifest}")
         actual_hash = sha256(directory / asset)
-        if actual_hash != match.group(1).lower():
+        if actual_hash != digest.lower():
             raise IntegrityError(f"Producer checksum mismatch: {asset}")
         verified[asset] = actual_hash
     return verified
+
+def trusted_cli_release_stage(value: Path) -> Path:
+    # A publishing command accepts only its own fixed dist/release directory.
+    # Pure verify() may still inspect disposable test fixtures.
+    repo_root = Path(__file__).resolve().parent.parent
+    if Path.cwd().resolve() != repo_root or value != Path("dist") / "release":
+        raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
+    dist_root = repo_root / "dist"
+    candidate = dist_root / "release"
+    # Checking only the leaf misses an attacker-controlled dist -> outside symlink.
+    # All ancestors below the resolved repository root must be real directories.
+    if (
+        not dist_root.is_dir()
+        or dist_root.is_symlink()
+        or not candidate.is_dir()
+        or candidate.is_symlink()
+        or candidate.resolve() != repo_root / "dist" / "release"
+    ):
+        raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
+    return candidate
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -73,7 +104,7 @@ def main() -> int:
     parser.add_argument("directory", type=Path)
     args = parser.parse_args()
     try:
-        verified = verify(args.version, args.directory)
+        verified = verify(args.version, trusted_cli_release_stage(args.directory))
     except (IntegrityError, OSError) as exc:
         print(f"RELEASE_PRODUCER_SHA256_FAIL: {exc}", file=sys.stderr)
         return 1
