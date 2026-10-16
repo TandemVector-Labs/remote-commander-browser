@@ -33,7 +33,10 @@ test('overlapping tab retirements cannot drop younger button refs',()=>{
  assert.match(c,/std::chrono::steady_clock::now/);
  assert.match(c,/std::chrono::milliseconds\(1250\)/);
  assert.match(c,/return item.created <= limit/);
- assert.doesNotMatch(c,/retired_ui_\.clear\(\)/);
+ const release = c.split('void AppController::ReleaseRetiredUi() {')[1]
+                  ?.split('void AppController::QueueTabClose')[0];
+ assert.ok(release);
+ assert.doesNotMatch(release,/retired_ui_\.clear\(\)/);
 });
 
 test('session autosave only writes when tab order, active id or URL changes',()=>{

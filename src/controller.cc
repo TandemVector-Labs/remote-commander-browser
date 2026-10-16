@@ -2416,7 +2416,7 @@ void AppController::OnWindowDestroyed() {
   // Otherwise the BrowserApp owner may destruct after CefShutdown().
   for (auto& theme : tab_badges_)
     for (auto& mode : theme)
-      for (auto& badge : mode) badge = nullptr;
+      std::fill(mode.begin(), mode.end(), CefRefPtr<CefImage>{});
   retired_ui_.clear();
   window_created_ = false;
   CefQuitMessageLoop();
