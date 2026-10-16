@@ -273,8 +273,9 @@ class ReleaseIntegrityTests(unittest.TestCase):
         # older runtime. No sudo, profile or launcher mutation is permissible.
         home = self.root / "uninstall-home"
         base = home / ".local" / "share" / "chatgpt-cef-v2"
-        old = base / "runtime-v0.8.1"
-        newer = base / "runtime-v0.8.2"
+        uninstall_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        old = base / f"runtime-v{uninstall_version}"
+        newer = base / "runtime-v9.9.9"
         old.mkdir(parents=True)
         newer.mkdir()
         old_sandbox = old / "chrome-sandbox"
@@ -319,7 +320,8 @@ class ReleaseIntegrityTests(unittest.TestCase):
         outside = self.root / "uninstall-outside-data"
         outside.mkdir()
         (outside / "sentinel").write_text("DO_NOT_TOUCH", encoding="utf-8")
-        (base / "runtime-v0.8.1").symlink_to(outside, target_is_directory=True)
+        uninstall_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        (base / f"runtime-v{uninstall_version}").symlink_to(outside, target_is_directory=True)
         env = {**os.environ, "HOME": str(home)}
         p = subprocess.run(["bash", str(ROOT / "scripts" / "uninstall-local.sh")],
                            env=env, capture_output=True, text=True, timeout=12)
