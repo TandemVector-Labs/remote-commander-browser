@@ -216,5 +216,42 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(self.launcher.read_bytes(), self.old_launcher)
 
 
+    def test_world_writable_candidate_binary_is_denied(self):
+        self.binary.chmod(0o777)
+        with self.trusted_fixture():
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe binary"):
+                upgrade.activate(**self.kwargs())
+        self.assert_unmodified()
+
+    def test_world_writable_existing_launcher_is_denied(self):
+        self.launcher.chmod(0o777)
+        with self.trusted_fixture():
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe launcher/desktop"):
+                upgrade.activate(**self.kwargs())
+        self.assert_unmodified()
+
+    def test_finalize_rejects_world_writable_new_launcher_then_rollback_works(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            self.launcher.chmod(0o777)
+            with self.assertRaisesRegex(upgrade.UpgradeError, "finalize conflict"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+        self.assertEqual(stat.S_IMODE(self.launcher.stat().st_mode), 0o755)
+
+    def test_finalize_rejects_world_writable_new_desktop_then_rollback_works(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            self.desktop.chmod(0o666)
+            with self.assertRaisesRegex(upgrade.UpgradeError, "finalize conflict"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+        self.assertEqual(stat.S_IMODE(self.desktop.stat().st_mode), 0o644)
+
+
 if __name__ == "__main__":
     unittest.main()

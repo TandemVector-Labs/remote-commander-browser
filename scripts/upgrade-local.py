@@ -73,7 +73,7 @@ def validate_dirs(home):
     return roots[3]
 
 
-def regular_or_absent(path):
+def regular_or_absent(path, require_safe_mode=False):
     if path.is_symlink():
         raise UpgradeError("linked launcher/desktop refused")
     if not path.exists():
@@ -81,6 +81,8 @@ def regular_or_absent(path):
     meta = path.lstat()
     require(stat.S_ISREG(meta.st_mode) and meta.st_uid == os.getuid(),
             "unexpected existing launcher/desktop")
+    require(not require_safe_mode or not (meta.st_mode & 0o022),
+            "unsafe launcher/desktop permissions")
     return {"hash": digest_file(path), "mode": stat.S_IMODE(meta.st_mode)}
 
 
@@ -100,7 +102,9 @@ def validate_staged(app, version, binary_hash, sandbox_hash, package, package_ha
         require(not path.is_symlink() and path.is_file(), "linked/missing artifact: " + str(path))
     bstat, sstat = binary.lstat(), sandbox.lstat()
     require(stat.S_ISREG(bstat.st_mode) and bstat.st_uid == os.getuid()
-            and bool(bstat.st_mode & 0o111), "unsafe binary ownership or executability")
+            and bool(bstat.st_mode & 0o111)
+            and not (bstat.st_mode & 0o022),
+            "unsafe binary ownership or executability/permissions")
     require(stat.S_ISREG(sstat.st_mode) and sstat.st_uid == 0 and sstat.st_gid == 0
             and stat.S_IMODE(sstat.st_mode) == 0o4755, "SUID sandbox must be root:root 4755")
     require(digest_file(binary) == binary_hash, "binary digest mismatch")
@@ -232,7 +236,8 @@ def activate(home, version, binary_hash, sandbox_hash, package, package_hash,
         runtime = validate_staged(app, version, binary_hash, sandbox_hash,
                                   package, package_hash, source_commit)
         outputs = rendered_files(home, runtime, binary_hash, sandbox_hash)
-        old = {name: regular_or_absent(path) for name, (path, _, _) in outputs.items()}
+        old = {name: regular_or_absent(path, require_safe_mode=True)
+               for name, (path, _, _) in outputs.items()}
         if old["launcher"] is not None:
             launcher_old = outputs["launcher"][0].read_text()
             require(("runtime-v" + version) not in launcher_old,
@@ -255,6 +260,7 @@ def activate(home, version, binary_hash, sandbox_hash, package, package_hash,
                     "old_hash": previous["hash"] if previous else None,
                     "old_mode": previous["mode"] if previous else None,
                     "new_hash": digest_bytes(content),
+                    "new_mode": mode,
                 }
             meta = temp_state / "journal.json"
             with open(meta, "x") as stream:
@@ -291,7 +297,9 @@ def action(home, mode):
         for name, path in (("launcher", home / ".local/bin/chatgpt-cef-v2"),
                            ("desktop", home / ".local/share/applications/chatgpt-cef-v2.desktop")):
             cur = regular_or_absent(path)
-            require(cur is not None and cur["hash"] == record["files"][name]["new_hash"],
+            expected = record["files"][name]
+            require(cur is not None and cur["hash"] == expected["new_hash"]
+                    and cur["mode"] == expected.get("new_mode"),
                     "finalize conflict: " + name)
         # Finalization only removes rollback launcher/desktop backups; old runtime
         # directories are retained until independently approved cleanup.
