@@ -96,6 +96,7 @@ class AppController {
   class BrowserViewDelegateImpl;
   class FixedPanelDelegate;
   class SidebarSurfaceDelegate;
+  class HeaderSurfaceDelegate;
 
   void BuildWindowUI();
   bool VerticalTabsVisible() const;
@@ -104,9 +105,11 @@ class AppController {
   bool SidebarCompactEffective() const;
   void RunVerticalTabsSelfTest();
   void RunFullscreenTabsSelfTest();
+  void RunLiveTabCounterSelfTest();
   void BuildHeaderControls();
   void UpdateDraggableRegions();
   void RebuildTabStrip();
+  void UpdateTabSwitcherLabel();
   void RetireTabUi(const Tab& tab);
   void ReleaseRetiredUi();
   void TabLifetimeSoakStep(int cycle);
@@ -142,9 +145,12 @@ class AppController {
   CefRefPtr<CefBoxLayout> sidebar_layout_;
   CefRefPtr<SidebarSurfaceDelegate> sidebar_surface_delegate_;
   CefRefPtr<CefPanel> header_spacer_;
+  CefRefPtr<CefPanel> window_controls_;
   CefRefPtr<CefOverlayController> sidebar_overlay_;
   CefRefPtr<CefPanel> content_;
   CefRefPtr<CefPanel> companion_panel_;
+  CefRefPtr<CefPanel> companion_fill_;
+  CefRefPtr<CefBoxLayout> companion_layout_;
   CefRefPtr<CefOverlayController> companion_overlay_;
   std::vector<CefRefPtr<CefLabelButton>> companion_rows_;
   std::vector<CefRefPtr<CefLabelButton>> header_buttons_;
@@ -153,6 +159,8 @@ class AppController {
   CefRefPtr<CefLabelButton> orientation_button_;
   CefRefPtr<CefLabelButton> sidebar_toggle_button_;
   CefRefPtr<CefLabelButton> sidebar_new_tab_button_;
+  CefRefPtr<CefLabelButton> sidebar_orientation_button_;
+  CefRefPtr<CefLabelButton> sidebar_companion_button_;
   int visible_tab_capacity_ = -1;
   bool compact_toolbar_cached_ = false;
   bool narrow_toolbar_cached_ = false;
@@ -168,6 +176,7 @@ class AppController {
   CefRefPtr<ButtonDelegateImpl> button_delegate_;
   CefRefPtr<BrowserViewDelegateImpl> browser_view_delegate_;
   CefRefPtr<FixedPanelDelegate> header_delegate_;
+  CefRefPtr<HeaderSurfaceDelegate> header_surface_delegate_;
 
   CefRefPtr<AppClient> client_;
   struct RetiredUi {
@@ -190,6 +199,7 @@ class AppController {
   bool fullscreen_sidebar_expanded_ = false;
   bool companion_visible_ = false;
   bool companion_tick_scheduled_ = false;
+  unsigned companion_binding_poll_ = 0;
   bool closing_ = false;
   bool window_created_ = false;
   int self_test_tab_id_ = 0;

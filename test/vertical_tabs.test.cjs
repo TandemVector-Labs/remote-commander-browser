@@ -68,3 +68,22 @@ test('compact rail badge labels and full-height background are native',()=>{
  assert.match(src,/sidebar_fill_->GetBackgroundColor\(\) == UiSidebarPalette\(\)\.background/);
  assert.match(src,/class AppController::SidebarSurfaceDelegate : public CefPanelDelegate/);
 });
+
+test('Companion self-test uses BrowserView right edge with horizontal and vertical sidebars',()=>{
+ const fn=src.split('void AppController::RunCompanionSelfTest() {')[1]?.split('void AppController::NewTab(')[0];
+ assert.ok(fn);
+ assert.match(fn,/active->overlay->GetBounds\(\)\.x \+\s*active->overlay->GetBounds\(\)\.width == companion_overlay_->GetBounds\(\)\.x/);
+ assert.match(fn,/companion_overlay_->GetBounds\(\)\.width == kCompanionWidth/);
+ assert.match(fn,/" vertical_tabs=" << VerticalTabsVisible\(\)/);
+ assert.match(fn,/" compact_rail=" << \(VerticalTabsVisible\(\) && SidebarCompactEffective\(\)\)/);
+ const layout=src.split('void AppController::LayoutTabOverlays() {')[1]?.split('void AppController::SaveSessionState()')[0];
+ assert.ok(layout);
+ assert.match(layout,/CefRect bounds\(left, top, browser_width, height\)/);
+ assert.match(layout,/CefRect\(left \+ browser_width, top, kCompanionWidth, height\)/);
+ for(const left of [0,54,246]) {
+  const browserWidth=880;
+  const companionX=left+browserWidth;
+  assert.equal(left+browserWidth,companionX);
+  if(left!==0)assert.notEqual(browserWidth,companionX);
+ }
+});

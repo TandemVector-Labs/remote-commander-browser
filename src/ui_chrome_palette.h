@@ -21,44 +21,44 @@ struct ThemePalette {
   std::uint32_t dangerText;
   std::uint32_t content;
 };
-// Minimal native chrome: quieter neutrals, restrained violet accent, high
+// Minimal native chrome: sky-blue light mode and deep navy dark mode, high
 // contrast labels. Keep web content, system theme and CEF profiles untouched.
 // 0xAARRGGBB, deliberately opaque to avoid compositing over BrowserViews.
 inline constexpr ThemePalette kLightPalette{
-  0xFFF7F7FAu, // header
-  0xFFEDECF2u, // inactive tab
-  0xFFE5E3ECu, // hovered tab
-  0xFFDCD7EFu, // selected tab
-  0xFFF7F7FAu, // quiet toolbar surface
-  0xFFEAE8F1u, // toolbar hover
-  0xFFE8E4F6u, // control tint
-  0xFF6247B9u, // accent
-  0xFF51359Fu, // accent hover
-  0xFF25232Bu, // text
-  0xFF57515Fu, // secondary text
-  0xFF2F2455u, // selected text
-  0xFFF7F7FAu, // danger idle = quiet
-  0xFFF8DFE5u, // danger hover
-  0xFF981E3Du, // danger text
-  0xFFFFFFFFu  // page background
+  0xFFEAF5FFu, // header
+  0xFFDDEDFBu, // inactive tab
+  0xFFC8E1F8u, // hovered tab
+  0xFFACD4F7u, // selected tab
+  0xFFEAF5FFu, // quiet toolbar surface
+  0xFFCFE5F9u, // toolbar hover
+  0xFFD5EAFEu, // control tint
+  0xFF1865B5u, // accent
+  0xFF14518Du, // accent hover
+  0xFF152A42u, // text
+  0xFF39566Fu, // secondary text
+  0xFF123B66u, // selected text
+  0xFFEAF5FFu, // danger idle = quiet
+  0xFFF5D5DAu, // danger hover
+  0xFF9E243Au, // danger text
+  0xFFF5FAFFu  // page background
 };
 inline constexpr ThemePalette kDarkPalette{
-  0xFF1D1C22u, // header
-  0xFF29272Fu, // inactive tab
-  0xFF35313Fu, // hovered tab
-  0xFF49405Fu, // selected tab
-  0xFF1D1C22u, // quiet toolbar surface
-  0xFF33303Cu, // toolbar hover
-  0xFF383045u, // control tint
-  0xFFA58CFFu, // accent
-  0xFFC0AFFFu, // accent hover
-  0xFFF4F1F9u, // text
-  0xFFB9B2C3u, // secondary text
-  0xFFFAF6FFu, // selected text
-  0xFF1D1C22u, // danger idle = quiet
-  0xFF593243u, // danger hover
-  0xFFFFD2DAu, // danger text
-  0xFF141317u  // page background
+  0xFF111E32u, // header
+  0xFF1B2B45u, // inactive tab
+  0xFF274063u, // hovered tab
+  0xFF345779u, // selected tab
+  0xFF111E32u, // quiet toolbar surface
+  0xFF263B58u, // toolbar hover
+  0xFF223956u, // control tint
+  0xFF72B8FFu, // accent
+  0xFF9ACBFFu, // accent hover
+  0xFFE8F3FFu, // text
+  0xFFAABFD5u, // secondary text
+  0xFFF5FBFFu, // selected text
+  0xFF111E32u, // danger idle = quiet
+  0xFF512739u, // danger hover
+  0xFFFFC7D7u, // danger text
+  0xFF0C1526u  // page background
 };
 struct SidebarPalette {
   std::uint32_t background;
@@ -71,12 +71,12 @@ struct SidebarPalette {
 // Sidebar is one visual depth below the top chrome; active row has an
 // unmistakable contrast step, even in compact (icon-only) mode.
 inline constexpr SidebarPalette kLightSidebar{
-  0xFFF0EFF4u, 0xFFF0EFF4u, 0xFFE3E0ECu,
-  0xFFDCD7EFu, 0xFF25232Bu, 0xFF57515Fu
+  0xFFE2F0FEu, 0xFFE2F0FEu, 0xFFCDE3F8u,
+  0xFFADD3F5u, 0xFF152A42u, 0xFF3A5975u
 };
 inline constexpr SidebarPalette kDarkSidebar{
-  0xFF17161Bu, 0xFF23212Au, 0xFF353140u,
-  0xFF49405Fu, 0xFFF4F1F9u, 0xFFB9B2C3u
+  0xFF101B2Eu, 0xFF18263Du, 0xFF243C58u,
+  0xFF355B7Eu, 0xFFE8F3FFu, 0xFFB5C5D8u
 };
 inline constexpr const SidebarPalette& Sidebar(ThemeMode mode) {
   return mode == ThemeMode::Dark ? kDarkSidebar : kLightSidebar;

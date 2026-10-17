@@ -700,7 +700,7 @@ std::vector<DisplayRow> DescribeMonitor(const Monitor& m, uint64_t now_ms) {
     rows.push_back({m.blocked?"Commander Core — 🔴 BLOCKED":"Commander Core — ⚪ DISCONNECTED",reason});
     return rows;
   }
-  rows.push_back({"Commander Core — 🟢 CONNECTED","v"+m.version+" / "+m.device_name+" / "+m.profile+" / "+m.platform+":"+std::to_string(m.port)});
+  rows.push_back({"Commander Core — 🟢 CONNECTED (monitor only)","v"+m.version+" / "+m.device_name+" / "+m.profile+" / "+m.platform+":"+std::to_string(m.port)});
   const std::string gui=!m.gui_enabled?"DISABLED":m.gui_uncertain?"UNCERTAIN":m.gui_available?"READY":"UNAVAILABLE";
   rows.push_back({"GUI control: "+gui,
     "backend "+(m.gui_backend.empty()?"UNKNOWN":m.gui_backend)+" / "+(m.gui_session_type.empty()?"UNKNOWN":m.gui_session_type)+

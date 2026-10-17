@@ -134,6 +134,42 @@ jobs:
           if($text -match 'CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL|FATAL|stack smashing'){ throw 'native failure marker present' }
           Write-Output 'WINDOWS_NATIVE_LIFECYCLE_PASS'
 
+      - name: Owner native live tab counter (isolated Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path 'build-windows/bin/chatgpt-cef-v2.exe').Path
+          $profile=Join-Path $env:RUNNER_TEMP 'cgwa-win-native-profile'
+          if(!(Test-Path -LiteralPath $profile)){throw 'OWNER_COUNTER_PRIVATE_PROFILE_MISSING'}
+          $log=Join-Path $profile 'counter_debug.log'
+          $args=@(
+            "--cgwa-profile-dir=$profile",
+            '--background-test',
+            '--live-tab-counter-self-test',
+            '--shutdown-self-test',
+            '--disable-gpu',
+            '--host-resolver-rules=MAP * ~NOTFOUND',
+            "--log-file=$log"
+          )
+          $p=Start-Process -FilePath $exe -ArgumentList $args -PassThru
+          if(-not $p.WaitForExit(20000)){
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw 'owner counter timeout'
+          }
+          if($p.ExitCode -ne 0){throw "owner counter exit=$($p.ExitCode)"}
+          if(!(Test-Path -LiteralPath $log)){throw 'owner counter log missing'}
+          $text=Get-Content -LiteralPath $log -Raw
+          if($text -notmatch 'CGWA_LIVE_TAB_COUNTER_SELFTEST PASS first=1 last=1 restored=1'){
+            throw 'native live counter marker missing'
+          }
+          if($text -notmatch 'CGWA_SHUTDOWN WINDOW_DESTROYED'){
+            throw 'native counter shutdown missing'
+          }
+          if($text -match 'CGWA_LIVE_TAB_COUNTER_SELFTEST FAIL|FATAL|stack smashing'){
+            throw 'native counter failure marker'
+          }
+          Write-Output 'WINDOWS_OWNER_COUNTER_NATIVE=PASS'
+
       - name: Package Windows preview
         shell: pwsh
         run: ./scripts/package-windows.ps1
