@@ -64,3 +64,21 @@ test('native X11 horizontal tab-drag fixture opts into horizontal layout explici
  assert.match(drag,/R247_NATIVE_DRAG_PASS/);
  assert.doesNotMatch(drag,/--no-sandbox/);
 });
+
+test('ChatGPT quick actions are visible, compact and paint with palette contrast',()=>{
+ assert.match(cc,/if \(id == kNewTabButton\)\s*return CefSize\(owner_ && owner_->compact_toolbar_cached_ \? 40 : 116, 36\)/);
+ assert.match(cc,/auto add = make_button\(kNewTabButton, "＋ New Chat", UiPalette\(\)\.softAccent\)/);
+ assert.match(cc,/button->AsLabelButton\(\)->SetText\(compact_toolbar \? "＋" : "＋ New Chat"\)/);
+ assert.match(cc,/sidebar_new->SetBackgroundColor\(UiPalette\(\)\.softAccent\)/);
+ assert.match(cc,/sidebar_new_tab_button_->SetBackgroundColor\(UiPalette\(\)\.softAccent\)/);
+ assert.match(cc,/id == kSidebarNewTabButton\) \{[\s\S]*?bg = hot \? UiPalette\(\)\.tabHover : UiPalette\(\)\.softAccent/);
+ assert.match(cc,/const cef_color_t fg = active \? UiPalette\(\)\.content : UiSidebarPalette\(\)\.text/);
+ for(const theme of ['Light','Dark']){
+  const p=colors(theme);
+  assert.ok(contrast(p[11],p[6])>=4.5,theme+' New Chat label');
+  assert.ok(contrast(p[15],p[7])>=4.5,theme+' active badge numeral');
+ }
+ // No extra BrowserView, default web navigation, or account/session access.
+ assert.equal((cc.match(/CreateBrowserView\(/g)||[]).length,1);
+ assert.doesNotMatch(cc,/ExecuteJavaScript|DeleteAllCookies|--no-sandbox/);
+});

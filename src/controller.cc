@@ -464,6 +464,9 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
         id == kSidebarOrientationButton || id == kSidebarCompanionButton)
       return CefSize(owner_ && owner_->SidebarCompactEffective() ? 34 : 214, 36);
     if (id == kThemeButton) return CefSize(42, 36);
+    // Native ChatGPT quick action: readable when wide, 40-DIP icon on narrow.
+    if (id == kNewTabButton)
+      return CefSize(owner_ && owner_->compact_toolbar_cached_ ? 40 : 116, 36);
     if (id == kTabSwitcherButton) return CefSize(60, 36);
     if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
       return CefSize(34, 36);
@@ -894,8 +897,8 @@ void AppController::BuildWindowUI() {
   auto sidebar_new = CefLabelButton::CreateLabelButton(
       button_delegate_, sidebar_compact_ ? "+" : "+   New Chat");
   sidebar_new->SetID(kSidebarNewTabButton);
-  sidebar_new->SetBackgroundColor(UiSidebarPalette().background);
-  sidebar_new->SetEnabledTextColors(UiSidebarPalette().text);
+  sidebar_new->SetBackgroundColor(UiPalette().softAccent);
+  sidebar_new->SetEnabledTextColors(UiPalette().activeText);
   sidebar_new->SetFontList(kUIFont);
   sidebar_new->SetInkDropEnabled(false);
   sidebar_new->SetTooltipText("Open ChatGPT in a new workspace tab (Ctrl+T)");
@@ -1023,7 +1026,7 @@ void AppController::BuildHeaderControls() {
   header_buttons_.push_back(move_right);
   header_->AddChildView(move_right);
 
-  auto add = make_button(kNewTabButton, "＋", UiPalette().button);
+  auto add = make_button(kNewTabButton, "＋ New Chat", UiPalette().softAccent);
   add->SetEnabledTextColors(UiPalette().activeText);
   add->SetTooltipText("Open ChatGPT in a new workspace tab (Ctrl+T)");
   add->SetAccessibleName("Open ChatGPT workspace tab");
@@ -1843,8 +1846,8 @@ void AppController::ApplyNativeTheme() {
     sidebar_toggle_button_->SetEnabledTextColors(UiSidebarPalette().text);
   }
   if (sidebar_new_tab_button_) {
-    sidebar_new_tab_button_->SetBackgroundColor(UiSidebarPalette().background);
-    sidebar_new_tab_button_->SetEnabledTextColors(UiSidebarPalette().text);
+    sidebar_new_tab_button_->SetBackgroundColor(UiPalette().softAccent);
+    sidebar_new_tab_button_->SetEnabledTextColors(UiPalette().activeText);
   }
   if (content_) content_->SetBackgroundColor(UiPalette().content);
   if (companion_panel_) companion_panel_->SetBackgroundColor(UiPalette().header);
@@ -2130,10 +2133,13 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
   cef_color_t bg = hot ? UiPalette().buttonHover : UiPalette().button;
   cef_color_t fg = hot ? UiPalette().text : UiPalette().muted;
 
-  if (id == kSidebarToggleButton || id == kSidebarNewTabButton ||
-      id == kSidebarOrientationButton) {
+  if (id == kSidebarToggleButton || id == kSidebarOrientationButton) {
     bg = hot ? UiSidebarPalette().hover : UiSidebarPalette().background;
     fg = UiSidebarPalette().text;
+  } else if (id == kSidebarNewTabButton) {
+    // First-class ChatGPT action, visually distinct from the passive rail.
+    bg = hot ? UiPalette().tabHover : UiPalette().softAccent;
+    fg = UiPalette().activeText;
   } else if (id == kSidebarCompanionButton) {
     // Keep the vertical Commander action as prominent as the horizontal CTA.
     bg = hot ? UiPalette().primaryHover : UiPalette().primary;
@@ -2221,7 +2227,9 @@ CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
       {7, 1, 1, 1, 1}, {7, 5, 7, 5, 7}};
   const cef_color_t base = active ? UiPalette().primary :
                                       UiSidebarPalette().active;
-  const cef_color_t fg = active ? 0xFFFFFFFFu : UiSidebarPalette().text;
+  // Dark CTA is light blue; white-on-light-blue is unreadable. Use the
+  // theme's deliberately contrasting content color for the active badge.
+  const cef_color_t fg = active ? UiPalette().content : UiSidebarPalette().text;
   auto channel = [](cef_color_t color, int bits) {
     return static_cast<unsigned char>((color >> bits) & 0xFFu);
   };
@@ -2291,8 +2299,11 @@ void AppController::RebuildTabStrip() {
   for (const auto& button : header_buttons_) {
     if (!button) continue;
     const int id = button->GetID();
-    if (id == kTabSwitcherButton || id == kNewTabButton)
+    if (id == kTabSwitcherButton || id == kNewTabButton) {
+      if (id == kNewTabButton)
+        button->AsLabelButton()->SetText(compact_toolbar ? "＋" : "＋ New Chat");
       button->SetVisible(!vertical);
+    }
     else if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
       button->SetVisible(!vertical && !compact_toolbar && tabs_.size() > 1);
     else if (id == kCompanionButton) {
