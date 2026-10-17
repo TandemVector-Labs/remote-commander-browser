@@ -167,6 +167,34 @@ jobs:
             vertical_ci_profile=''
           done
 
+      - name: Owner visual feedback native fullscreen and right Companion regression
+        run: |
+          set -euo pipefail
+          profile=$(mktemp -d /tmp/cgwa-owner-fullscreen-XXXXXX)
+          [[ "$profile" == /tmp/cgwa-owner-fullscreen-* && -d "$profile" && ! -L "$profile" ]] || exit 61
+          trap 'rm -rf -- "$profile"' EXIT
+          set +e
+          xvfb-run -a timeout 16 build/bin/chatgpt-cef-v2 \
+            --cgwa-profile-dir="$profile" --background-test \
+            --log-file="$profile/chrome_debug.log" \
+            --fullscreen-tabs-self-test --shutdown-self-test \
+            '--host-resolver-rules=MAP * ~NOTFOUND' \
+            >.qa/owner-fullscreen.out 2>&1
+          rc=$?
+          set -e
+          if [[ -f "$profile/chrome_debug.log" ]]; then
+            cp "$profile/chrome_debug.log" .qa/owner-fullscreen-chrome.log
+          fi
+          [[ "$rc" -eq 0 ]] || { echo "OWNER_FULLSCREEN_NATIVE_EXIT=$rc"; exit 62; }
+          grep -Eq 'CGWA_FULLSCREEN_TABS_SELFTEST PASS.*rail_toggle=1.*commander_right=1.*header_toggle=1' .qa/owner-fullscreen-chrome.log
+          grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' .qa/owner-fullscreen-chrome.log
+          if grep -Eiq 'FATAL|segfault|SIGSEGV|stack smashing|CGWA_FULLSCREEN_TABS_SELFTEST FAIL' \
+            .qa/owner-fullscreen-chrome.log .qa/owner-fullscreen.out; then
+            echo OWNER_FULLSCREEN_NATIVE_FATAL
+            exit 63
+          fi
+          echo OWNER_FULLSCREEN_NATIVE_UI=PASS
+
       - name: R247 real native X11 mouse drag (isolated unauthenticated profile)
         run: |
           bash -n test/native-tab-drag-x11.sh

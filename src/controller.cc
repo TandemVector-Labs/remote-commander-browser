@@ -64,6 +64,8 @@ constexpr int kSidebarWidth = 246;
 constexpr int kSidebarCompactWidth = 54;
 constexpr int kSidebarToggleButton = 32;
 constexpr int kSidebarNewTabButton = 33;
+constexpr int kSidebarOrientationButton = 34;
+constexpr int kSidebarCompanionButton = 35;
 // Sidebar and header share coordinated light/dark color roles.
 constexpr int kSidebarMinWindowWidth = 550;
 constexpr int kCompanionRowBase = 300;
@@ -85,6 +87,7 @@ constexpr int kAccelMoveTabLeft = 106;
 constexpr int kAccelMoveTabRight = 107;
 constexpr int kAccelTab1 = 111;
 constexpr int kAccelOrientation = 119;
+constexpr int kAccelExitFullscreen = 120;
 
 constexpr int kVKeyTab = 0x09;
 constexpr int kVKey1 = 0x31;
@@ -93,6 +96,7 @@ constexpr int kVKeyW = 0x57;
 constexpr int kVKeyC = 0x43;
 constexpr int kVKeyE = 0x45;
 constexpr int kVKeyF11 = 0x7A;
+constexpr int kVKeyEscape = 0x1B;
 constexpr int kVKeyPageUp = 0x21;
 constexpr int kVKeyPageDown = 0x22;
 
@@ -419,6 +423,16 @@ class AppController::SidebarSurfaceDelegate : public CefPanelDelegate {
   IMPLEMENT_REFCOUNTING(SidebarSurfaceDelegate);
 };
 
+// Unused native chrome areas must paint a palette color instead of showing
+// CEF's default black surface, even after theme/fullscreen transitions.
+class AppController::HeaderSurfaceDelegate : public CefPanelDelegate {
+ public:
+  void OnThemeChanged(CefRefPtr<CefView> view) override {
+    if (view) view->SetBackgroundColor(UiPalette().header);
+  }
+  IMPLEMENT_REFCOUNTING(HeaderSurfaceDelegate);
+};
+
 class AppController::ButtonDelegateImpl : public CefButtonDelegate {
  public:
   explicit ButtonDelegateImpl(AppController* owner) : owner_(owner) {}
@@ -439,7 +453,8 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
     if (id == kBrandButton) return CefSize(kBrandWidth, 36);
     if (id == kCompanionButton) return CefSize(112, 36);
     if (id == kTabsOrientationButton) return CefSize(42, 36);
-    if (id == kSidebarToggleButton || id == kSidebarNewTabButton)
+    if (id == kSidebarToggleButton || id == kSidebarNewTabButton ||
+        id == kSidebarOrientationButton || id == kSidebarCompanionButton)
       return CefSize(owner_ && owner_->SidebarCompactEffective() ? 34 : 214, 36);
     if (id == kThemeButton) return CefSize(42, 36);
     if (id == kTabSwitcherButton) return CefSize(60, 36);
@@ -529,6 +544,7 @@ AppController::AppController() {
   button_delegate_ = new ButtonDelegateImpl(this);
   browser_view_delegate_ = new BrowserViewDelegateImpl(this);
   header_delegate_ = new FixedPanelDelegate(1240, kHeaderHeight);
+  header_surface_delegate_ = new HeaderSurfaceDelegate();
   g_ui_theme = ReadThemePreference();
   vertical_tabs_ = ReadVerticalTabsPreference();
   sidebar_compact_ = ReadSidebarCompactPreference();
@@ -809,14 +825,15 @@ void AppController::BuildWindowUI() {
   header_->SetBackgroundColor(UiPalette().header);
   CefBoxLayoutSettings horizontal;
   horizontal.horizontal = true;
-  horizontal.between_child_spacing = 4;
+  // Controls within the same native title bar should meet edge-to-edge.
+  horizontal.between_child_spacing = 0;
   horizontal.inside_border_horizontal_spacing = 10;
   horizontal.inside_border_vertical_spacing = 4;
   horizontal.cross_axis_alignment = CEF_AXIS_ALIGNMENT_CENTER;
   horizontal.default_flex = 0;
   header_layout_ = header_->SetToBoxLayout(horizontal);
 
-  tab_strip_ = CefPanel::CreatePanel(nullptr);
+  tab_strip_ = CefPanel::CreatePanel(header_surface_delegate_);
   tab_strip_->SetBackgroundColor(UiPalette().header);
   CefBoxLayoutSettings tabs_layout;
   tabs_layout.horizontal = true;
@@ -869,6 +886,30 @@ void AppController::BuildWindowUI() {
   sidebar_new->SetAccessibleName("New tab");
   sidebar_new_tab_button_ = sidebar_new;
   sidebar_->AddChildView(sidebar_new);
+  // Fullscreen vertical mode hides the top header; orientation and Companion
+  // must still be available by mouse on the LEFT native rail.
+  auto sidebar_orientation = CefLabelButton::CreateLabelButton(
+      button_delegate_, "⇥  Horizontal tabs");
+  sidebar_orientation->SetID(kSidebarOrientationButton);
+  sidebar_orientation->SetBackgroundColor(UiSidebarPalette().background);
+  sidebar_orientation->SetEnabledTextColors(UiSidebarPalette().text);
+  sidebar_orientation->SetFontList(kUIFont);
+  sidebar_orientation->SetInkDropEnabled(true);
+  sidebar_orientation->SetTooltipText("Switch to horizontal tabs (Ctrl+Shift+E)");
+  sidebar_orientation->SetAccessibleName("Use horizontal tabs");
+  sidebar_orientation_button_ = sidebar_orientation;
+  sidebar_->AddChildView(sidebar_orientation);
+  auto sidebar_companion = CefLabelButton::CreateLabelButton(
+      button_delegate_, "◈  Commander");
+  sidebar_companion->SetID(kSidebarCompanionButton);
+  sidebar_companion->SetBackgroundColor(UiSidebarPalette().background);
+  sidebar_companion->SetEnabledTextColors(UiSidebarPalette().text);
+  sidebar_companion->SetFontList(kUIFont);
+  sidebar_companion->SetInkDropEnabled(true);
+  sidebar_companion->SetTooltipText("Toggle right-hand Commander panel (Ctrl+Shift+C)");
+  sidebar_companion->SetAccessibleName("Toggle Commander on the right");
+  sidebar_companion_button_ = sidebar_companion;
+  sidebar_->AddChildView(sidebar_companion);
   sidebar_->AddChildView(vertical_tab_strip_);
   // An explicitly painted flexible native child fills the unused rail area.
   // Unlike a parent's transparent overlay, this keeps dark mode dark down
@@ -903,6 +944,8 @@ void AppController::BuildWindowUI() {
   window_->SetAccelerator(kAccelMoveTabLeft, kVKeyPageUp, true, true, false, true);
   window_->SetAccelerator(kAccelMoveTabRight, kVKeyPageDown, true, true, false, true);
   window_->SetAccelerator(kAccelFullscreen, kVKeyF11, false, false, false, true);
+  // Esc exits native fullscreen, even when a ChatGPT BrowserView has focus.
+  window_->SetAccelerator(kAccelExitFullscreen, kVKeyEscape, false, false, false, true);
   window_->SetAccelerator(kAccelCompanion, kVKeyC, true, true, false, true);
   window_->SetAccelerator(kAccelOrientation, kVKeyE, true, true, false, true);
   for (int i = 0; i < 8; ++i)
@@ -929,9 +972,8 @@ void AppController::BuildHeaderControls() {
   header_buttons_.push_back(brand);
   header_->AddChildView(brand);
 
-  header_->AddChildView(tab_strip_);
-  header_layout_->SetFlexForView(tab_strip_, 1);
-
+  // The tab layout control is the first actionable header control on the
+  // left, not hidden among Commander and window buttons on the right.
   auto orientation = make_button(
       kTabsOrientationButton, vertical_tabs_ ? "⇥" : "☰",
       UiPalette().softAccent);
@@ -942,6 +984,8 @@ void AppController::BuildHeaderControls() {
   orientation_button_ = orientation;
   header_buttons_.push_back(orientation);
   header_->AddChildView(orientation);
+  header_->AddChildView(tab_strip_);
+  header_layout_->SetFlexForView(tab_strip_, 1);
 
   auto switcher = make_button(kTabSwitcherButton, "1 / 1", UiPalette().softAccent);
   switcher->SetEnabledTextColors(UiPalette().activeText);
@@ -988,35 +1032,46 @@ void AppController::BuildHeaderControls() {
   // The trailing flexible region anchors window controls to the *right edge*
   // in both orientations. The hidden horizontal strip must not leave them
   // floating in the middle of the window.
-  header_spacer_ = CefPanel::CreatePanel(nullptr);
+  header_spacer_ = CefPanel::CreatePanel(header_surface_delegate_);
   header_spacer_->SetBackgroundColor(UiPalette().header);
   header_->AddChildView(header_spacer_);
   header_layout_->SetFlexForView(header_spacer_, 1);
+
+  // Group the OS controls with zero gap; no stray separator between the
+  // fullscreen, maximize, minimize and close surfaces.
+  window_controls_ = CefPanel::CreatePanel(header_surface_delegate_);
+  window_controls_->SetBackgroundColor(UiPalette().header);
+  CefBoxLayoutSettings controls;
+  controls.horizontal = true;
+  controls.between_child_spacing = 0;
+  controls.cross_axis_alignment = CEF_AXIS_ALIGNMENT_CENTER;
+  window_controls_->SetToBoxLayout(controls);
+  header_->AddChildView(window_controls_);
 
   auto full = make_button(kFullscreenButton, "⛶", UiPalette().button);
   full->SetTooltipText("Fullscreen (F11)");
   full->SetAccessibleName("Toggle fullscreen");
   header_buttons_.push_back(full);
-  header_->AddChildView(full);
+  window_controls_->AddChildView(full);
 
   auto max = make_button(kMaximizeButton, "▢", UiPalette().button);
   max->SetTooltipText("Maximize / Restore");
   max->SetAccessibleName("Maximize or restore");
   header_buttons_.push_back(max);
-  header_->AddChildView(max);
+  window_controls_->AddChildView(max);
 
   auto min = make_button(kMinimizeButton, "−", UiPalette().button);
   min->SetTooltipText("Minimize");
   min->SetAccessibleName("Minimize");
   header_buttons_.push_back(min);
-  header_->AddChildView(min);
+  window_controls_->AddChildView(min);
 
   auto close = make_button(kCloseWindowButton, "×", UiPalette().danger);
   close->SetEnabledTextColors(UiPalette().muted);
   close->SetTooltipText("Close");
   close->SetAccessibleName("Close application");
   header_buttons_.push_back(close);
-  header_->AddChildView(close);
+  window_controls_->AddChildView(close);
 }
 
 
@@ -1031,6 +1086,7 @@ void AppController::UpdateDraggableRegions() {
   window_->Layout();
   header_->Layout();
   if (tab_strip_) tab_strip_->Layout();
+  if (window_controls_) window_controls_->Layout();
 
   const CefRect header_bounds = header_->GetBounds();
   if (header_bounds.width <= 0 || header_bounds.height <= 0) {
@@ -1055,8 +1111,16 @@ void AppController::UpdateDraggableRegions() {
   };
 
   for (const auto& button : header_buttons_) {
-    if (button && button->IsVisible())
+    if (!button || !button->IsVisible()) continue;
+    const bool group = window_controls_ && button->GetParentView() &&
+        button->GetParentView()->IsSame(window_controls_);
+    if (group) {
+      const CefRect parent = window_controls_->GetBounds();
+      subtract(button->GetBounds(), header_bounds.x + parent.x,
+               header_bounds.y + parent.y);
+    } else {
       subtract(button->GetBounds(), header_bounds.x, header_bounds.y);
+    }
   }
 
   if (tab_strip_ && tab_strip_->IsVisible()) {
@@ -1073,7 +1137,7 @@ void AppController::UpdateDraggableRegions() {
 }
 
 void AppController::BuildCompanionPanel() {
-  companion_panel_ = CefPanel::CreatePanel(nullptr);
+  companion_panel_ = CefPanel::CreatePanel(header_surface_delegate_);
   companion_panel_->SetBackgroundColor(UiPalette().header);
   CefBoxLayoutSettings settings;
   settings.horizontal = false;
@@ -1081,7 +1145,7 @@ void AppController::BuildCompanionPanel() {
   settings.inside_border_horizontal_spacing = 12;
   settings.inside_border_vertical_spacing = 10;
   settings.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
-  companion_panel_->SetToBoxLayout(settings);
+  companion_layout_ = companion_panel_->SetToBoxLayout(settings);
   for (int i = 0; i < kCompanionRowCount; ++i) {
     auto row = CefLabelButton::CreateLabelButton(button_delegate_, "");
     row->SetID(kCompanionRowBase + i);
@@ -1102,6 +1166,11 @@ void AppController::BuildCompanionPanel() {
   refresh->SetTooltipText("Reads private local Commander monitor/binding files only; no network, model or command execution.");
   refresh->SetAccessibleName("Refresh read-only local observation");
   companion_panel_->AddChildView(refresh);
+  // Paint the otherwise unoccupied Companion column to the bottom, not black.
+  companion_fill_ = CefPanel::CreatePanel(header_surface_delegate_);
+  companion_fill_->SetBackgroundColor(UiPalette().header);
+  companion_panel_->AddChildView(companion_fill_);
+  if (companion_layout_) companion_layout_->SetFlexForView(companion_fill_, 1);
   companion_overlay_ = window_->AddOverlayView(companion_panel_, CEF_DOCKING_MODE_CUSTOM, true);
   if (companion_overlay_ && companion_overlay_->IsValid()) companion_overlay_->SetVisible(false);
   UpdateCompanionPanel();
@@ -1123,6 +1192,7 @@ void AppController::RefreshCompanion() {
   companion_automation_ = companion::ReadAutomation(root);
   companion_observation_ = companion::ReadObservation(root);
   companion_binding_ = companion::ReadNativeBinding(root);
+  companion_binding_poll_ = 0;
   UpdateCompanionPanel();
   if (companion_visible_ && !companion_tick_scheduled_) CompanionTick();
 }
@@ -1170,7 +1240,8 @@ void AppController::UpdateCompanionPanel() {
     row->SetAccessibleName(rows[i].text + " | " + rows[i].detail);
     const bool caution = rows[i].text.find("UNVERIFIED") != std::string::npos ||
                          rows[i].text.find("DISCONNECTED") != std::string::npos ||
-                         rows[i].text.find("BLOCKED") != std::string::npos;
+                         rows[i].text.find("BLOCKED") != std::string::npos ||
+                         rows[i].text.find("UNCERTAIN") != std::string::npos;
     row->SetEnabledTextColors(caution ? UiPalette().dangerText : UiPalette().text);
   }
   companion_panel_->Layout();
@@ -1180,8 +1251,16 @@ void AppController::CompanionTick() {
   CEF_REQUIRE_UI_THREAD();
   companion_tick_scheduled_ = false;
   if (closing_ || !companion_visible_) return;
-  companion_monitor_ = companion::ReadMonitor(companion::ProfileRoot());
-  companion_automation_ = companion::ReadAutomation(companion::ProfileRoot());
+  const std::string root = companion::ProfileRoot();
+  companion_monitor_ = companion::ReadMonitor(root);
+  companion_automation_ = companion::ReadAutomation(root);
+  // Monitor counters update every second, but chat/project identity can change
+  // independently. Refresh that private binding evidence every third tick.
+  if (++companion_binding_poll_ >= 3) {
+    companion_binding_poll_ = 0;
+    companion_observation_ = companion::ReadObservation(root);
+    companion_binding_ = companion::ReadNativeBinding(root);
+  }
   UpdateCompanionPanel();
   companion_tick_scheduled_ = true;
   // No captured controller pointer: a queued tick cannot dereference a
@@ -1263,6 +1342,9 @@ void AppController::SetActiveTabInternal(int tab_id) {
   Tab* target = FindTabById(tab_id);
   if (!target) return;
   active_tab_id_ = tab_id;
+  // A visible tab uses the fast path (no strip rebuild), but the counter must
+  // update on EVERY selection rather than waiting for theme/layout changes.
+  UpdateTabSwitcherLabel();
   // Fast path: selecting a visible tab changes only highlights/focus.
   // Avoid detaching/reparenting every native view on Ctrl+Tab or click.
   const bool already_displayed = target->ui_panel &&
@@ -1423,7 +1505,9 @@ void AppController::LayoutTabOverlays() {
   const int height = std::max(1, client_bounds.height - top);
   const bool show_sidebar = VerticalTabsVisible();
   const int left = show_sidebar ? SidebarWidth() : 0;
-  const bool show_companion = companion_visible_ && !fullscreen_ &&
+  // Commander remains docked at the RIGHT, including native fullscreen.
+  // The vertical left rail has its own visible toggle when header is hidden.
+  const bool show_companion = companion_visible_ &&
       width - left >= kCompanionWidth + 320;
   const int browser_width =
       std::max(1, width - left - (show_companion ? kCompanionWidth : 0));
@@ -1726,6 +1810,16 @@ void AppController::ApplyNativeTheme() {
   if (sidebar_fill_)
     sidebar_fill_->SetBackgroundColor(UiSidebarPalette().background);
   if (header_spacer_) header_spacer_->SetBackgroundColor(UiPalette().header);
+  if (window_controls_) window_controls_->SetBackgroundColor(UiPalette().header);
+  if (companion_fill_) companion_fill_->SetBackgroundColor(UiPalette().header);
+  if (sidebar_orientation_button_) {
+    sidebar_orientation_button_->SetBackgroundColor(UiSidebarPalette().background);
+    sidebar_orientation_button_->SetEnabledTextColors(UiSidebarPalette().text);
+  }
+  if (sidebar_companion_button_) {
+    sidebar_companion_button_->SetBackgroundColor(UiSidebarPalette().background);
+    sidebar_companion_button_->SetEnabledTextColors(UiSidebarPalette().text);
+  }
   if (sidebar_toggle_button_) {
     sidebar_toggle_button_->SetBackgroundColor(UiSidebarPalette().background);
     sidebar_toggle_button_->SetEnabledTextColors(UiSidebarPalette().text);
@@ -1813,16 +1907,41 @@ void AppController::RunFullscreenTabsSelfTest() {
         app->sidebar_overlay_ &&
         app->sidebar_overlay_->GetBounds().width == kSidebarWidth &&
         active && active->title_button && active->title_button->IsVisible();
+    const bool rail_access = app->sidebar_orientation_button_ &&
+        app->sidebar_orientation_button_->IsVisible() &&
+        app->sidebar_companion_button_ &&
+        app->sidebar_companion_button_->IsVisible();
+    const bool companion_was_visible = app->companion_visible_;
+    if (!companion_was_visible) app->ToggleCompanionPanel();
+    app->LayoutTabOverlays();
+    const CefRect viewport = app->window_->GetClientAreaBoundsInScreen();
+    const CefRect companion_bounds = app->companion_overlay_->GetBounds();
+    const bool commander_right = app->companion_overlay_ &&
+        app->companion_overlay_->IsValid() &&
+        app->companion_overlay_->IsVisible() &&
+        companion_bounds.x + companion_bounds.width == viewport.width &&
+        companion_bounds.width == kCompanionWidth &&
+        active && active->overlay && active->overlay->IsValid() &&
+        active->overlay->GetBounds().x +
+            active->overlay->GetBounds().width == companion_bounds.x;
+    if (!companion_was_visible) app->ToggleCompanionPanel();
     app->ToggleTabsOrientation();
     const bool horizontal = app->window_->IsFullscreen() &&
         app->header_ && app->header_->IsVisible() &&
         app->tab_strip_ && app->tab_strip_->IsVisible() &&
         active && active->title_button && active->title_button->IsVisible();
+    const bool left_orientation = app->orientation_button_ &&
+        app->orientation_button_->IsVisible();
     LOG(WARNING) << "CGWA_FULLSCREEN_TABS_SELFTEST "
-                 << (compact && expanded && horizontal ? "PASS" : "FAIL")
+                 << (compact && expanded && horizontal &&
+                     rail_access && commander_right && left_orientation
+                         ? "PASS" : "FAIL")
                  << " compact=" << compact
                  << " expanded=" << expanded
-                 << " horizontal=" << horizontal;
+                 << " horizontal=" << horizontal
+                 << " rail_toggle=" << rail_access
+                 << " commander_right=" << commander_right
+                 << " header_toggle=" << left_orientation;
     app->ToggleFullscreen();
   }), 1350);
 }
@@ -1925,6 +2044,11 @@ bool AppController::OnAccelerator(int command_id) {
   if (command_id == kAccelMoveTabLeft) { MoveActiveTab(-1); return true; }
   if (command_id == kAccelMoveTabRight) { MoveActiveTab(1); return true; }
   if (command_id == kAccelFullscreen) { ToggleFullscreen(); return true; }
+  if (command_id == kAccelExitFullscreen) {
+    if (!window_ || !window_->IsFullscreen()) return false;
+    ToggleFullscreen();
+    return true;
+  }
   if (command_id == kAccelCompanion) { ToggleCompanionPanel(); return true; }
   if (command_id == kAccelOrientation) { ToggleTabsOrientation(); return true; }
   if (command_id >= kAccelTab1 && command_id < kAccelTab1 + 8) {
@@ -1959,7 +2083,8 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
   cef_color_t bg = hot ? UiPalette().buttonHover : UiPalette().button;
   cef_color_t fg = hot ? UiPalette().text : UiPalette().muted;
 
-  if (id == kSidebarToggleButton || id == kSidebarNewTabButton) {
+  if (id == kSidebarToggleButton || id == kSidebarNewTabButton ||
+      id == kSidebarOrientationButton || id == kSidebarCompanionButton) {
     bg = hot ? UiSidebarPalette().hover : UiSidebarPalette().background;
     fg = UiSidebarPalette().text;
   } else if (id == kBrandButton) {
@@ -2010,6 +2135,8 @@ void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
   if (id == kTabsOrientationButton) { ToggleTabsOrientation(); return; }
   if (id == kSidebarToggleButton) { ToggleSidebarCompact(); return; }
   if (id == kSidebarNewTabButton) { NewTab(); return; }
+  if (id == kSidebarOrientationButton) { ToggleTabsOrientation(); return; }
+  if (id == kSidebarCompanionButton) { ToggleCompanionPanel(); return; }
   if (id == kThemeButton) { ToggleTheme(); return; }
   if (id == kCompanionRefreshButton) { RefreshCompanion(); return; }
   if (id == kFullscreenButton) { ToggleFullscreen(); return; }
@@ -2115,9 +2242,11 @@ void AppController::RebuildTabStrip() {
     else if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
       button->SetVisible(!vertical && !compact_toolbar && tabs_.size() > 1);
     else if (id == kCompanionButton)
-      button->SetVisible(!compact_toolbar);
-    else if (id == kBrandButton || id == kTabsOrientationButton)
+      button->SetVisible(!compact_toolbar || fullscreen_);
+    else if (id == kBrandButton)
       button->SetVisible(!narrow_toolbar);
+    else if (id == kTabsOrientationButton)
+      button->SetVisible(!vertical); // Vertical rail owns the alternate action.
     // Keyboard accelerators remain available in compact and narrow widths.
     // Theme and OS window-management controls are always visible.
   }
@@ -2129,6 +2258,10 @@ void AppController::RebuildTabStrip() {
   }
   if (sidebar_new_tab_button_)
     sidebar_new_tab_button_->SetText(compact ? "+" : "+   New tab");
+  if (sidebar_orientation_button_)
+    sidebar_orientation_button_->SetText(compact ? "⇥" : "⇥  Horizontal tabs");
+  if (sidebar_companion_button_)
+    sidebar_companion_button_->SetText(compact ? "◈" : "◈  Commander");
   if (orientation_button_) {
     orientation_button_->SetText(vertical_tabs_ ? "⇥" : "☰");
     orientation_button_->SetAccessibleName(
@@ -2216,15 +2349,7 @@ void AppController::RebuildTabStrip() {
     else
       tab_strip_->AddChildView(item);
   }
-  if (tab_switcher_button_) {
-    const auto label = tabs_.empty() ? "0 / 0" :
-        std::to_string(active_index + 1) + " / " + std::to_string(tabs_.size());
-    tab_switcher_button_->SetText(label);
-    tab_switcher_button_->SetTooltipText(
-        "Tab " + label + " — click for next, Ctrl+1..8 for direct selection");
-    tab_switcher_button_->SetAccessibleName(
-        "Tab " + label + "; activate next tab");
-  }
+  UpdateTabSwitcherLabel();
   tab_strip_->Layout();
   vertical_tab_strip_->Layout();
   if (sidebar_) sidebar_->Layout();
@@ -2232,6 +2357,26 @@ void AppController::RebuildTabStrip() {
     header_->Layout();
     UpdateDraggableRegions();
   }
+}
+
+void AppController::UpdateTabSwitcherLabel() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!tab_switcher_button_) return;
+  int active_index = -1;
+  for (size_t i = 0; i < tabs_.size(); ++i)
+    if (tabs_[i].id == active_tab_id_) {
+      active_index = static_cast<int>(i);
+      break;
+    }
+  const auto label = tabs_.empty() ? "0 / 0" :
+      std::to_string(std::max(0, active_index) + 1) + " / " +
+      std::to_string(tabs_.size());
+  if (tab_switcher_button_->GetText().ToString() != label)
+    tab_switcher_button_->SetText(label);
+  tab_switcher_button_->SetTooltipText(
+      "Tab " + label + " — click for next, Ctrl+1..8 for direct selection");
+  tab_switcher_button_->SetAccessibleName(
+      "Tab " + label + "; activate next tab");
 }
 
 void AppController::UpdateTabButton(Tab& tab) {
