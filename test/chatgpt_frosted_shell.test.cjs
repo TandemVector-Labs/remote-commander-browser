@@ -90,3 +90,11 @@ test('narrow ChatGPT brand remains identifiable without stealing full title spac
  assert.match(cc,/new_bounds\.width < 690/);
  assert.equal((cc.match(/CreateBrowserView\(/g)||[]).length,1);
 });
+
+test('native R247 drag checks a source-title drag handshake before moving to destination',()=>{
+ const drag=fs.readFileSync(path.join(__dirname,'native-tab-drag-x11.sh'),'utf8');
+ assert.match(drag,/xdotool mousemove --sync "\$\(\(sx \+ 8\)\)" "\$sy"/);
+ assert.match(drag,/CGWA_NATIVE_DRAG_DIAG stage=press_sample ok=1 held=1 hit=1/);
+ assert.match(drag,/R247_NATIVE_PRESS_HANDSHAKE_FAILED/);
+ assert.match(drag,/CGWA_NATIVE_TAB_DRAG_REORDER/);
+});
