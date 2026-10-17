@@ -456,7 +456,10 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
   }
   CefSize GetPreferredSize(CefRefPtr<CefView> view) override {
     const int id = view->GetID();
-    if (id == kBrandButton) return CefSize(kBrandWidth, 36);
+    // Preserve recognizable ChatGPT identity down to 650 DIP, not an empty
+    // leading header. The icon-only brand is 44 DIP and costs no extra View.
+    if (id == kBrandButton)
+      return CefSize(owner_ && owner_->narrow_toolbar_cached_ ? 44 : kBrandWidth, 36);
     if (id == kCompanionButton)
       return CefSize(owner_ && owner_->compact_toolbar_cached_ ? 40 : 112, 36);
     if (id == kTabsOrientationButton) return CefSize(42, 36);
@@ -2312,8 +2315,11 @@ void AppController::RebuildTabStrip() {
       button->AsLabelButton()->SetText(compact_toolbar ? "◈" : "◈ Commander");
       button->SetVisible(!vertical);
     }
-    else if (id == kBrandButton)
-      button->SetVisible(!narrow_toolbar);
+    else if (id == kBrandButton) {
+      // No brand disappears just because the user makes the window narrow.
+      button->AsLabelButton()->SetText(narrow_toolbar ? "◆" : "◆  ChatGPT");
+      button->SetVisible(true);
+    }
     else if (id == kTabsOrientationButton)
       button->SetVisible(!vertical); // Vertical rail owns the alternate action.
     // Keyboard accelerators remain available in compact and narrow widths.

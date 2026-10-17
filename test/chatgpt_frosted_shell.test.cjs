@@ -82,3 +82,11 @@ test('ChatGPT quick actions are visible, compact and paint with palette contrast
  assert.equal((cc.match(/CreateBrowserView\(/g)||[]).length,1);
  assert.doesNotMatch(cc,/ExecuteJavaScript|DeleteAllCookies|--no-sandbox/);
 });
+
+test('narrow ChatGPT brand remains identifiable without stealing full title space',()=>{
+ assert.match(cc,/if \(id == kBrandButton\)\s*return CefSize\(owner_ && owner_->narrow_toolbar_cached_ \? 44 : kBrandWidth, 36\)/);
+ assert.match(cc,/id == kBrandButton\) \{[\s\S]*?SetText\(narrow_toolbar \? "◆" : "◆  ChatGPT"\);\s*button->SetVisible\(true\)/);
+ assert.match(cc,/SetAccessibleName\("ChatGPT Commander desktop workspace"\)/);
+ assert.match(cc,/new_bounds\.width < 690/);
+ assert.equal((cc.match(/CreateBrowserView\(/g)||[]).length,1);
+});
