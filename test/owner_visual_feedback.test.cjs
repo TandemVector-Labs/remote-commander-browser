@@ -132,3 +132,17 @@ test('Commander remains a first-class, accessible control in compact horizontal 
  assert.match(cc,/Commander \/ پنل فرمانده/);
  assert.doesNotMatch(cc,/--no-sandbox|DeleteAllCookies|clearBrowsingData/);
 });
+
+test('Commander CTA stays highlighted in expanded and compact vertical rail, across theme toggle',()=>{
+ const light=palette('Light'),dark=palette('Dark');
+ for(const [mode,v] of [['light',light],['dark',dark]]) {
+   assert.ok(contrast(v[15],v[7])>=4.5,mode+' rail Commander text');
+   assert.ok(contrast(v[15],v[8])>=4.5,mode+' rail Commander hover');
+ }
+ assert.match(cc,/sidebar_companion->SetBackgroundColor\(UiPalette\(\)\.primary\)/);
+ assert.match(cc,/sidebar_companion->SetEnabledTextColors\(UiPalette\(\)\.content\)/);
+ assert.match(cc,/sidebar_companion_button_->SetBackgroundColor\(UiPalette\(\)\.primary\)/);
+ assert.match(cc,/id == kSidebarCompanionButton\) \{\s*\/\/[^\\r\\n]*[\s\S]*?bg = hot \? UiPalette\(\)\.primaryHover : UiPalette\(\)\.primary/);
+ assert.match(cc,/sidebar_companion_button_->SetText\(compact \? "◈" : "◈  Commander"\)/);
+ assert.match(cc,/id == kSidebarCompanionButton\) \{ ToggleCompanionPanel\(\); return; \}/);
+});

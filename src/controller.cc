@@ -912,8 +912,8 @@ void AppController::BuildWindowUI() {
   auto sidebar_companion = CefLabelButton::CreateLabelButton(
       button_delegate_, "◈  Commander");
   sidebar_companion->SetID(kSidebarCompanionButton);
-  sidebar_companion->SetBackgroundColor(UiSidebarPalette().background);
-  sidebar_companion->SetEnabledTextColors(UiSidebarPalette().text);
+  sidebar_companion->SetBackgroundColor(UiPalette().primary);
+  sidebar_companion->SetEnabledTextColors(UiPalette().content);
   sidebar_companion->SetFontList(kUIFont);
   sidebar_companion->SetInkDropEnabled(true);
   sidebar_companion->SetTooltipText("Toggle right-hand Commander panel (Ctrl+Shift+C)");
@@ -1828,8 +1828,8 @@ void AppController::ApplyNativeTheme() {
     sidebar_orientation_button_->SetEnabledTextColors(UiSidebarPalette().text);
   }
   if (sidebar_companion_button_) {
-    sidebar_companion_button_->SetBackgroundColor(UiSidebarPalette().background);
-    sidebar_companion_button_->SetEnabledTextColors(UiSidebarPalette().text);
+    sidebar_companion_button_->SetBackgroundColor(UiPalette().primary);
+    sidebar_companion_button_->SetEnabledTextColors(UiPalette().content);
   }
   if (sidebar_toggle_button_) {
     sidebar_toggle_button_->SetBackgroundColor(UiSidebarPalette().background);
@@ -2124,9 +2124,13 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
   cef_color_t fg = hot ? UiPalette().text : UiPalette().muted;
 
   if (id == kSidebarToggleButton || id == kSidebarNewTabButton ||
-      id == kSidebarOrientationButton || id == kSidebarCompanionButton) {
+      id == kSidebarOrientationButton) {
     bg = hot ? UiSidebarPalette().hover : UiSidebarPalette().background;
     fg = UiSidebarPalette().text;
+  } else if (id == kSidebarCompanionButton) {
+    // Keep the vertical Commander action as prominent as the horizontal CTA.
+    bg = hot ? UiPalette().primaryHover : UiPalette().primary;
+    fg = UiPalette().content;
   } else if (id == kBrandButton) {
     bg = UiPalette().header;
     fg = UiPalette().primary;
