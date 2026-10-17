@@ -767,6 +767,8 @@ void AppController::OnWindowBoundsChanged(const CefRect& new_bounds) {
             static_cast<int>(tabs_.size()), active_index)
       : visible;
   if (current.capacity != visible_tab_capacity_ ||
+      (new_bounds.width < 930) != compact_toolbar_cached_ ||
+      (new_bounds.width < 690) != narrow_toolbar_cached_ ||
       (vertical_tab_strip_ && vertical_tab_strip_->IsVisible() != use_vertical))
     RebuildTabStrip();
   LayoutTabOverlays();
@@ -1978,7 +1980,7 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
   } else if (id >= kTabButtonBase) {
     const int tab_id = id - kTabButtonBase;
     const bool active = tab_id == active_tab_id_;
-    bg = hot ? UiPalette().tabHover : (active ? UiPalette().tabActive : UiPalette().tab);
+    bg = active ? UiPalette().tabActive : (hot ? UiPalette().tabHover : UiPalette().tab);
     fg = active ? UiPalette().activeText : (hot ? UiPalette().text : UiPalette().muted);
   }
 
@@ -1986,7 +1988,7 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
     const int tab_id = id >= kTabCloseBase
                            ? id - kTabCloseBase : id - kTabButtonBase;
     const bool active = tab_id == active_tab_id_;
-    bg = hot ? UiSidebarPalette().hover : (active ? UiSidebarPalette().active : UiSidebarPalette().tab);
+    bg = active ? UiSidebarPalette().active : (hot ? UiSidebarPalette().hover : UiSidebarPalette().tab);
     fg = active ? UiSidebarPalette().text : UiSidebarPalette().muted;
   }
   button->SetBackgroundColor(bg);
@@ -2089,6 +2091,12 @@ void AppController::RebuildTabStrip() {
   // Keeping stable CEF Views also avoids heap churn on every active-tab switch.
   tab_strip_->RemoveAllChildViews();
   vertical_tab_strip_->RemoveAllChildViews();
+  const int logical_width = window_ ?
+      window_->GetClientAreaBoundsInScreen().width : 1240;
+  const bool compact_toolbar = logical_width < 930;
+  const bool narrow_toolbar = logical_width < 690;
+  compact_toolbar_cached_ = compact_toolbar;
+  narrow_toolbar_cached_ = narrow_toolbar;
   const bool vertical = VerticalTabsVisible();
   tab_strip_->SetVisible(!vertical);
   vertical_tab_strip_->SetVisible(vertical);
@@ -2102,10 +2110,14 @@ void AppController::RebuildTabStrip() {
     const int id = button->GetID();
     if (id == kTabSwitcherButton || id == kNewTabButton)
       button->SetVisible(!vertical);
-    // Hide inapplicable tab reorder arrows, but retain mouse access when
-    // there are multiple horizontal tabs. All keyboard shortcuts remain.
-    if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
-      button->SetVisible(!vertical && tabs_.size() > 1);
+    else if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
+      button->SetVisible(!vertical && !compact_toolbar && tabs_.size() > 1);
+    else if (id == kCompanionButton)
+      button->SetVisible(!compact_toolbar);
+    else if (id == kBrandButton || id == kTabsOrientationButton)
+      button->SetVisible(!narrow_toolbar);
+    // Keyboard accelerators remain available in compact and narrow widths.
+    // Theme and OS window-management controls are always visible.
   }
   const bool compact = SidebarCompactEffective();
   if (sidebar_toggle_button_) {
@@ -2123,7 +2135,6 @@ void AppController::RebuildTabStrip() {
   int active_index = 0;
   for (size_t i = 0; i < tabs_.size(); ++i)
     if (tabs_[i].id == active_tab_id_) active_index = static_cast<int>(i);
-  const int logical_width = window_ ? window_->GetClientAreaBoundsInScreen().width : 1240;
   const auto visible = vertical
       ? rc_ui::SelectVerticalTabs(
             window_->GetClientAreaBoundsInScreen().height -

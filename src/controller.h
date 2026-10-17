@@ -154,6 +154,8 @@ class AppController {
   CefRefPtr<CefLabelButton> sidebar_toggle_button_;
   CefRefPtr<CefLabelButton> sidebar_new_tab_button_;
   int visible_tab_capacity_ = -1;
+  bool compact_toolbar_cached_ = false;
+  bool narrow_toolbar_cached_ = false;
   companion::Monitor companion_monitor_;
   companion::Automation companion_automation_;
   companion::Observation companion_observation_;
