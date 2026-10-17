@@ -79,6 +79,12 @@ int XIOErrorHandlerImpl(Display* display) {
 }
 #endif
 
+// A Linux CEF child may rotate the stack canary during fork. The entire
+// call path to CefExecuteProcess must avoid retaining the old stack guard.
+// See upstream CEF #3912. Keep Windows builds unchanged.
+#if defined(__linux__)
+NO_STACK_PROTECTOR
+#endif
 int RunBrowser(const CefMainArgs& main_args,
                CefRefPtr<CefApp> app,
                void* sandbox_info) {
