@@ -107,8 +107,8 @@ const rc_ui::SidebarPalette& UiSidebarPalette() {
   return rc_ui::Sidebar(g_ui_theme);
 }
 
-constexpr char kUIFont[] = "Inter, Vazirmatn, Noto Sans Arabic, DejaVu Sans, 12px";
-constexpr char kUIBoldFont[] = "Inter, Vazirmatn, Noto Sans Arabic, DejaVu Sans, Bold 12px";
+constexpr char kUIFont[] = "Vazirmatn, Inter, Noto Sans Arabic, DejaVu Sans, 13px";
+constexpr char kUIBoldFont[] = "Vazirmatn, Inter, Noto Sans Arabic, DejaVu Sans, Bold 13px";
 constexpr char kCompactTabFont[] = "DejaVu Sans, Bold 15px";
 
 std::string PathUtf8(const std::filesystem::path& path) {
@@ -451,7 +451,8 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
   CefSize GetPreferredSize(CefRefPtr<CefView> view) override {
     const int id = view->GetID();
     if (id == kBrandButton) return CefSize(kBrandWidth, 36);
-    if (id == kCompanionButton) return CefSize(112, 36);
+    if (id == kCompanionButton)
+      return CefSize(owner_ && owner_->compact_toolbar_cached_ ? 40 : 112, 36);
     if (id == kTabsOrientationButton) return CefSize(42, 36);
     if (id == kSidebarToggleButton || id == kSidebarNewTabButton ||
         id == kSidebarOrientationButton || id == kSidebarCompanionButton)
@@ -1023,8 +1024,9 @@ void AppController::BuildHeaderControls() {
   header_buttons_.push_back(add);
   header_->AddChildView(add);
 
-  auto companion = make_button(kCompanionButton, "◈ Commander", UiPalette().button);
-  companion->SetTooltipText("پنل مشاهده Commander (Ctrl+Shift+C)");
+  auto companion = make_button(kCompanionButton, "◈ Commander", UiPalette().primary);
+  companion->SetEnabledTextColors(UiPalette().content);
+  companion->SetTooltipText("Commander / پنل فرمانده (Ctrl+Shift+C)");
   companion->SetAccessibleName("Toggle read-only Commander companion");
   header_buttons_.push_back(companion);
   header_->AddChildView(companion);
@@ -2127,7 +2129,10 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
     fg = UiSidebarPalette().text;
   } else if (id == kBrandButton) {
     bg = UiPalette().header;
-    fg = UiPalette().text;
+    fg = UiPalette().primary;
+  } else if (id == kCompanionButton) {
+    bg = hot ? UiPalette().primaryHover : UiPalette().primary;
+    fg = UiPalette().content;
   } else if (id == kNewTabButton || id == kTabSwitcherButton) {
     bg = hot ? UiPalette().tabHover : UiPalette().softAccent;
     fg = UiPalette().activeText;
@@ -2279,8 +2284,12 @@ void AppController::RebuildTabStrip() {
       button->SetVisible(!vertical);
     else if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
       button->SetVisible(!vertical && !compact_toolbar && tabs_.size() > 1);
-    else if (id == kCompanionButton)
-      button->SetVisible(!compact_toolbar || fullscreen_);
+    else if (id == kCompanionButton) {
+      // Vertical rail owns its own Commander action. On a narrow horizontal
+      // window keep the icon reachable without crowding the tab strip.
+      button->AsLabelButton()->SetText(compact_toolbar ? "◈" : "◈ Commander");
+      button->SetVisible(!vertical);
+    }
     else if (id == kBrandButton)
       button->SetVisible(!narrow_toolbar);
     else if (id == kTabsOrientationButton)
@@ -2400,12 +2409,10 @@ void AppController::RebuildTabStrip() {
 void AppController::UpdateTabSwitcherLabel() {
   CEF_REQUIRE_UI_THREAD();
   if (!tab_switcher_button_) return;
-  int active_index = -1;
-  for (size_t i = 0; i < tabs_.size(); ++i)
-    if (tabs_[i].id == active_tab_id_) {
-      active_index = static_cast<int>(i);
-      break;
-    }
+  const auto current = std::find_if(tabs_.begin(), tabs_.end(),
+      [this](const Tab& tab) { return tab.id == active_tab_id_; });
+  const int active_index = current == tabs_.end()
+      ? -1 : static_cast<int>(std::distance(tabs_.begin(), current));
   const auto label = tabs_.empty() ? "0 / 0" :
       std::to_string(std::max(0, active_index) + 1) + " / " +
       std::to_string(tabs_.size());

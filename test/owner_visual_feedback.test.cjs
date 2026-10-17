@@ -116,3 +116,19 @@ test('native self-test changes the active tab counter without theme or chrome re
  assert.match(cc,/CGWA_LIVE_TAB_COUNTER_REQUIRES_BACKGROUND/);
  assert.doesNotMatch(run,/ToggleTheme\(/);
 });
+
+test('Commander remains a first-class, accessible control in compact horizontal chrome',()=>{
+ const light=palette('Light'),dark=palette('Dark');
+ for(const [mode,v] of [['light',light],['dark',dark]]) {
+   // Distinct primary action, including its hover state, is readable.
+   assert.ok(contrast(v[15],v[7])>=4.5,mode+' Commander label');
+   assert.ok(contrast(v[15],v[8])>=4.5,mode+' hovered Commander label');
+ }
+ assert.match(cc,/compact_toolbar_cached_ \? 40 : 112/);
+ assert.match(cc,/button->AsLabelButton\(\)->SetText\(compact_toolbar \? "◈" : "◈ Commander"\)/);
+ assert.match(cc,/id == kCompanionButton\) \{[\s\S]*?button->SetVisible\(!vertical\)/);
+ assert.match(cc,/id == kCompanionButton\) \{\s*bg = hot \? UiPalette\(\)\.primaryHover : UiPalette\(\)\.primary/);
+ assert.match(cc,/Vazirmatn, Inter, Noto Sans Arabic, DejaVu Sans, 13px/);
+ assert.match(cc,/Commander \/ پنل فرمانده/);
+ assert.doesNotMatch(cc,/--no-sandbox|DeleteAllCookies|clearBrowsingData/);
+});
