@@ -41,7 +41,22 @@ echo "R248_X11_COORDS wid=$wid window=${x},${y0} source=${sx},${sy} target=${tx}
 xdotool mousemove --sync "$sx" "$sy"
 sleep 0.1
 xdotool mousedown 1
-sleep 0.25
+# Wait for native CEF to confirm the press is held inside the source tab.
+# A fixed sleep alone can race the asynchronous UI press callback.
+source_ready=0
+for _ in $(seq 1 50); do
+  if [[ -f "$profile/chrome_debug.log" ]] &&
+     grep -Eq 'CGWA_NATIVE_DRAG_DIAG stage=press_sample ok=1 held=1 hit=1' "$profile/chrome_debug.log"; then
+    source_ready=1
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$source_ready" -ne 1 ]]; then
+  xdotool mouseup 1 || true
+  echo R247_SOURCE_PRESS_NOT_CONFIRMED
+  exit 41
+fi
 xdotool mousemove --sync "$tx" "$sy"
 sleep 0.35
 xdotool mouseup 1
