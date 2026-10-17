@@ -21,46 +21,45 @@ struct ThemePalette {
   std::uint32_t dangerText;
   std::uint32_t content;
 };
-// Lightweight 'frosted glass' visual illusion: one opaque native paint surface
-// per EXISTING view, with layered slate/blue surfaces and high-contrast labels.
-// Never use actual alpha, backdrop blur, shadows, CSS filters or extra BrowserViews:
-// those would add compositing work and can break CEF overlay/sandbox geometry.
-// Web content, authenticated profile, navigation and page CSS remain untouched.
+// A calm, layered native shell around the unmodified ChatGPT page.
+// Opaque CEF Views surfaces are intentional: no CSS injection, HTML chrome,
+// alpha compositing, backdrop blur or additional BrowserViews.  Light uses
+// porcelain white / pale blue; Dark uses deep navy / restrained sky accents.
 inline constexpr ThemePalette kLightPalette{
-  0xFFF4F8FFu, // header: daylight frosted glass
-  0xFFE5EFFBu, // inactive tab
-  0xFFD8E7FAu, // hovered tab
-  0xFFC7DEF9u, // selected tab
-  0xFFF1F6FEu, // quiet native toolbar
-  0xFFDDEAFBu, // toolbar hover
-  0xFFD8E7F9u, // subtle blue surface
-  0xFF2259ABu, // Commander CTA
-  0xFF18498Fu, // CTA hover
-  0xFF16283Fu, // text
-  0xFF485B73u, // secondary text
-  0xFF1E4576u, // selected text
-  0xFFF4F8FFu, // danger idle = quiet
-  0xFFFBE1EAu, // danger hover
-  0xFF9E2044u, // danger text
-  0xFFFFFFFFu  // light canvas / CTA text
+  0xFFF8FAFEu, // header: warm porcelain white
+  0xFFF0F4FBu, // inactive tab
+  0xFFE3EDFDu, // hovered tab
+  0xFFDCEAFEu, // active tab
+  0xFFF5F7FCu, // quiet native controls
+  0xFFEAF1FCu, // hover surface
+  0xFFE7F0FFu, // soft blue accent / quiet actions
+  0xFF2359BEu, // primary (horizontal Commander action)
+  0xFF174994u, // hover primary
+  0xFF1B2940u, // strong text
+  0xFF53647Du, // muted text
+  0xFF1F4487u, // active text
+  0xFFF8FAFEu, // close idle
+  0xFFFBE3EAu, // destructive hover
+  0xFF9F254Bu, // destructive text
+  0xFFFFFFFFu  // light content / CTA text
 };
 inline constexpr ThemePalette kDarkPalette{
-  0xFF0D1A2Du, // header: deep navy frosted glass
-  0xFF192A43u, // inactive tab
-  0xFF293F5Fu, // hovered tab
-  0xFF345278u, // selected tab
-  0xFF14243Au, // quiet native toolbar
-  0xFF283F60u, // toolbar hover
-  0xFF243C5Fu, // subtle blue surface
-  0xFF78BCFFu, // Commander CTA
-  0xFFA0D3FFu, // CTA hover
-  0xFFECF4FFu, // text
-  0xFFBFCEE1u, // secondary text
-  0xFFF8FBFFu, // selected text
-  0xFF0D1A2Du, // danger idle = quiet
-  0xFF542D45u, // danger hover
-  0xFFFFCAD9u, // danger text
-  0xFF091525u  // dark canvas / CTA text
+  0xFF101B31u, // header: deep midnight navy
+  0xFF17263Eu, // inactive tab
+  0xFF223957u, // hovered tab
+  0xFF284F80u, // selected tab
+  0xFF17263Eu, // quiet native controls
+  0xFF2A4366u, // hover surface
+  0xFF203859u, // soft accent
+  0xFF7CB3FFu, // primary
+  0xFFB3D5FFu, // hover primary
+  0xFFEEF5FFu, // strong text
+  0xFFC5D2E6u, // muted text
+  0xFFF8FAFFu, // active text
+  0xFF101B31u, // close idle
+  0xFF50283Du, // destructive hover
+  0xFFFFD6E1u, // destructive text
+  0xFF101B31u  // dark content / CTA text (dark on bright primary)
 };
 struct SidebarPalette {
   std::uint32_t background;
@@ -70,15 +69,15 @@ struct SidebarPalette {
   std::uint32_t text;
   std::uint32_t muted;
 };
-// A second, darker layer makes the sidebar read like translucent glass
-// without allocating a single additional compositor layer.
+// Distinct from the page-owned ChatGPT navigation: these are native tabs
+// and local Commander actions, with readable inactive and active states.
 inline constexpr SidebarPalette kLightSidebar{
-  0xFFEAF2FCu, 0xFFE3EDFAu, 0xFFD1E3F8u,
-  0xFFC1D9F8u, 0xFF16283Fu, 0xFF485B73u
+  0xFFF7F9FDu, 0xFFECF2FBu, 0xFFDFEAFDu,
+  0xFFD3E4FDu, 0xFF1B2A45u, 0xFF4D607Bu
 };
 inline constexpr SidebarPalette kDarkSidebar{
-  0xFF0B1729u, 0xFF14263Eu, 0xFF274262u,
-  0xFF34577Eu, 0xFFECF4FFu, 0xFFBFCEE1u
+  0xFF0C1729u, 0xFF17263Du, 0xFF263D5Cu,
+  0xFF2B517Cu, 0xFFEEF5FFu, 0xFFBDCEE3u
 };
 inline constexpr const SidebarPalette& Sidebar(ThemeMode mode) {
   return mode == ThemeMode::Dark ? kDarkSidebar : kLightSidebar;

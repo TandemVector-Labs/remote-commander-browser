@@ -36,7 +36,7 @@ test('Modern quiet browser chrome is accessible in both themes',()=>{
 });
 test('Minimal native toolbar still exposes critical actions and shortcuts',()=>{
   assert.match(ui,/kBrandWidth = 108;/);
-  assert.match(ui,/"◆  ChatGPT"/);
+  assert.match(ui,/"◈  RC Browser"/);
   assert.match(ui,/"◈ Commander"/);
   assert.match(ui,/"☾" : "☼"/);
   assert.match(ui,/SetAccessibleName\("Toggle read-only Commander companion"\)/);

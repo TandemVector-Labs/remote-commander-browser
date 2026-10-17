@@ -887,7 +887,7 @@ void AppController::BuildWindowUI() {
   vertical_tabs.default_flex = 0;
   vertical_tab_strip_->SetToBoxLayout(vertical_tabs);
   auto sidebar_toggle = CefLabelButton::CreateLabelButton(
-      button_delegate_, sidebar_compact_ ? "»" : "‹   Tabs");
+      button_delegate_, sidebar_compact_ ? "≡" : "≡  Workspace tabs");
   sidebar_toggle->SetID(kSidebarToggleButton);
   sidebar_toggle->SetBackgroundColor(UiSidebarPalette().background);
   sidebar_toggle->SetEnabledTextColors(UiSidebarPalette().text);
@@ -898,20 +898,20 @@ void AppController::BuildWindowUI() {
   sidebar_toggle_button_ = sidebar_toggle;
   sidebar_->AddChildView(sidebar_toggle);
   auto sidebar_new = CefLabelButton::CreateLabelButton(
-      button_delegate_, sidebar_compact_ ? "+" : "+   New Chat");
+      button_delegate_, sidebar_compact_ ? "+" : "＋  New tab");
   sidebar_new->SetID(kSidebarNewTabButton);
   sidebar_new->SetBackgroundColor(UiPalette().softAccent);
   sidebar_new->SetEnabledTextColors(UiPalette().activeText);
   sidebar_new->SetFontList(kUIFont);
   sidebar_new->SetInkDropEnabled(false);
-  sidebar_new->SetTooltipText("Open ChatGPT in a new workspace tab (Ctrl+T)");
-  sidebar_new->SetAccessibleName("Open ChatGPT workspace tab");
+  sidebar_new->SetTooltipText("Open Browser tab (Ctrl+T); this does not start a new ChatGPT conversation");
+  sidebar_new->SetAccessibleName("Open new Browser tab");
   sidebar_new_tab_button_ = sidebar_new;
   sidebar_->AddChildView(sidebar_new);
   // Fullscreen vertical mode hides the top header; orientation and Companion
   // must still be available by mouse on the LEFT native rail.
   auto sidebar_orientation = CefLabelButton::CreateLabelButton(
-      button_delegate_, "⇥  Horizontal tabs");
+      button_delegate_, "↔  Horizontal tabs");
   sidebar_orientation->SetID(kSidebarOrientationButton);
   sidebar_orientation->SetBackgroundColor(UiSidebarPalette().background);
   sidebar_orientation->SetEnabledTextColors(UiSidebarPalette().text);
@@ -924,8 +924,8 @@ void AppController::BuildWindowUI() {
   auto sidebar_companion = CefLabelButton::CreateLabelButton(
       button_delegate_, "◈  Commander");
   sidebar_companion->SetID(kSidebarCompanionButton);
-  sidebar_companion->SetBackgroundColor(UiPalette().primary);
-  sidebar_companion->SetEnabledTextColors(UiPalette().content);
+  sidebar_companion->SetBackgroundColor(UiPalette().softAccent);
+  sidebar_companion->SetEnabledTextColors(UiPalette().activeText);
   sidebar_companion->SetFontList(kUIFont);
   sidebar_companion->SetInkDropEnabled(false);
   sidebar_companion->SetTooltipText("Toggle right-hand Commander panel (Ctrl+Shift+C)");
@@ -986,11 +986,11 @@ void AppController::BuildHeaderControls() {
   };
 
   // Compact product mark; identity remains available to screen readers.
-  auto brand = make_button(kBrandButton, "◆  ChatGPT", UiPalette().header);
+  auto brand = make_button(kBrandButton, "◈  RC Browser", UiPalette().header);
   brand->SetFontList(kUIBoldFont);
   brand->SetEnabledTextColors(UiPalette().text);
-  brand->SetAccessibleName("ChatGPT Commander desktop workspace");
-  brand->SetTooltipText("ChatGPT Commander — private native workspace");
+  brand->SetAccessibleName("Remote Commander Browser native workspace");
+  brand->SetTooltipText("Remote Commander Browser — native tabs around ChatGPT");
   header_buttons_.push_back(brand);
   header_->AddChildView(brand);
 
@@ -1029,10 +1029,10 @@ void AppController::BuildHeaderControls() {
   header_buttons_.push_back(move_right);
   header_->AddChildView(move_right);
 
-  auto add = make_button(kNewTabButton, "＋ New Chat", UiPalette().softAccent);
+  auto add = make_button(kNewTabButton, "＋ New tab", UiPalette().softAccent);
   add->SetEnabledTextColors(UiPalette().activeText);
-  add->SetTooltipText("Open ChatGPT in a new workspace tab (Ctrl+T)");
-  add->SetAccessibleName("Open ChatGPT workspace tab");
+  add->SetTooltipText("Open Browser tab (Ctrl+T); this does not start a new ChatGPT conversation");
+  add->SetAccessibleName("Open new Browser tab");
   header_buttons_.push_back(add);
   header_->AddChildView(add);
 
@@ -1841,8 +1841,8 @@ void AppController::ApplyNativeTheme() {
     sidebar_orientation_button_->SetEnabledTextColors(UiSidebarPalette().text);
   }
   if (sidebar_companion_button_) {
-    sidebar_companion_button_->SetBackgroundColor(UiPalette().primary);
-    sidebar_companion_button_->SetEnabledTextColors(UiPalette().content);
+    sidebar_companion_button_->SetBackgroundColor(UiPalette().softAccent);
+    sidebar_companion_button_->SetEnabledTextColors(UiPalette().activeText);
   }
   if (sidebar_toggle_button_) {
     sidebar_toggle_button_->SetBackgroundColor(UiSidebarPalette().background);
@@ -2145,8 +2145,8 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
     fg = UiPalette().activeText;
   } else if (id == kSidebarCompanionButton) {
     // Keep the vertical Commander action as prominent as the horizontal CTA.
-    bg = hot ? UiPalette().primaryHover : UiPalette().primary;
-    fg = UiPalette().content;
+    bg = hot ? UiPalette().tabHover : UiPalette().softAccent;
+    fg = UiPalette().activeText;
   } else if (id == kBrandButton) {
     bg = UiPalette().header;
     fg = UiPalette().primary;
@@ -2304,7 +2304,7 @@ void AppController::RebuildTabStrip() {
     const int id = button->GetID();
     if (id == kTabSwitcherButton || id == kNewTabButton) {
       if (id == kNewTabButton)
-        button->AsLabelButton()->SetText(compact_toolbar ? "＋" : "＋ New Chat");
+        button->AsLabelButton()->SetText(compact_toolbar ? "＋" : "＋ New tab");
       button->SetVisible(!vertical);
     }
     else if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
@@ -2317,7 +2317,7 @@ void AppController::RebuildTabStrip() {
     }
     else if (id == kBrandButton) {
       // No brand disappears just because the user makes the window narrow.
-      button->AsLabelButton()->SetText(narrow_toolbar ? "◆" : "◆  ChatGPT");
+      button->AsLabelButton()->SetText(narrow_toolbar ? "◈" : "◈  RC Browser");
       button->SetVisible(true);
     }
     else if (id == kTabsOrientationButton)
@@ -2327,16 +2327,23 @@ void AppController::RebuildTabStrip() {
   }
   const bool compact = SidebarCompactEffective();
   if (sidebar_toggle_button_) {
-    sidebar_toggle_button_->SetText(compact ? "»" : "‹   Tabs");
+    sidebar_toggle_button_->SetText(compact ? "≡" : "≡  Workspace tabs");
     sidebar_toggle_button_->SetAccessibleName(
         compact ? "Expand vertical tabs" : "Collapse vertical tabs");
   }
   if (sidebar_new_tab_button_)
-    sidebar_new_tab_button_->SetText(compact ? "+" : "+   New Chat");
+    sidebar_new_tab_button_->SetText(compact ? "+" : "＋  New tab");
   if (sidebar_orientation_button_)
-    sidebar_orientation_button_->SetText(compact ? "⇥" : "⇥  Horizontal tabs");
+    sidebar_orientation_button_->SetText(compact ? "↔" : "↔  Horizontal tabs");
   if (sidebar_companion_button_)
     sidebar_companion_button_->SetText(compact ? "◈" : "◈  Commander");
+  // Align words like navigation entries, while keeping compact icons centered.
+  const auto rail_alignment = compact
+      ? CEF_HORIZONTAL_ALIGNMENT_CENTER : CEF_HORIZONTAL_ALIGNMENT_LEFT;
+  for (const auto& button : {sidebar_toggle_button_, sidebar_new_tab_button_,
+                            sidebar_orientation_button_, sidebar_companion_button_}) {
+    if (button) button->SetHorizontalAlignment(rail_alignment);
+  }
   if (orientation_button_) {
     orientation_button_->SetText(vertical_tabs_ ? "⇥" : "☰");
     orientation_button_->SetAccessibleName(

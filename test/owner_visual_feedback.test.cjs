@@ -22,9 +22,9 @@ test('lightweight frosted glass chrome has daylight and navy layers, with access
  const light=palette('Light'),dark=palette('Dark');
  assert.equal(light.length,16);
  assert.equal(dark.length,16);
- assert.equal(light[0],'F4F8FF');
- assert.equal(dark[0],'0D1A2D');
- assert.equal(dark[15],'091525');
+ assert.equal(light[0],'F8FAFE');
+ assert.equal(dark[0],'101B31');
+ assert.equal(dark[15],'101B31');
  for(const [mode,v] of [['Light',light],['Dark',dark]]){
   assert.ok(contrast(v[9],v[0])>=7,mode+' toolbar text');
   assert.ok(contrast(v[10],v[1])>=4.5,mode+' muted tab text');
@@ -139,10 +139,10 @@ test('Commander CTA stays highlighted in expanded and compact vertical rail, acr
    assert.ok(contrast(v[15],v[7])>=4.5,mode+' rail Commander text');
    assert.ok(contrast(v[15],v[8])>=4.5,mode+' rail Commander hover');
  }
- assert.match(cc,/sidebar_companion->SetBackgroundColor\(UiPalette\(\)\.primary\)/);
- assert.match(cc,/sidebar_companion->SetEnabledTextColors\(UiPalette\(\)\.content\)/);
- assert.match(cc,/sidebar_companion_button_->SetBackgroundColor\(UiPalette\(\)\.primary\)/);
- assert.match(cc,/id == kSidebarCompanionButton\) \{\s*\/\/[^\\r\\n]*[\s\S]*?bg = hot \? UiPalette\(\)\.primaryHover : UiPalette\(\)\.primary/);
+ assert.match(cc,/sidebar_companion->SetBackgroundColor\(UiPalette\(\)\.softAccent\)/);
+ assert.match(cc,/sidebar_companion->SetEnabledTextColors\(UiPalette\(\)\.activeText\)/);
+ assert.match(cc,/sidebar_companion_button_->SetBackgroundColor\(UiPalette\(\)\.softAccent\)/);
+ assert.match(cc,/id == kSidebarCompanionButton\) \{[\s\S]*?bg = hot \? UiPalette\(\)\.tabHover : UiPalette\(\)\.softAccent/);
  assert.match(cc,/sidebar_companion_button_->SetText\(compact \? "◈" : "◈  Commander"\)/);
  assert.match(cc,/id == kSidebarCompanionButton\) \{ ToggleCompanionPanel\(\); return; \}/);
 });
