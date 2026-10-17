@@ -18,13 +18,13 @@ const lum=color=>[0,2,4].map(i=>parseInt(color.slice(i,i+2),16)/255)
  .reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
 const contrast=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
 
-test('light chrome is sky blue and dark chrome is navy, with accessible text',()=>{
+test('lightweight frosted glass chrome has daylight and navy layers, with accessible text',()=>{
  const light=palette('Light'),dark=palette('Dark');
  assert.equal(light.length,16);
  assert.equal(dark.length,16);
- assert.equal(light[0],'EAF5FF');
- assert.equal(dark[0],'111E32');
- assert.equal(dark[15],'0C1526');
+ assert.equal(light[0],'F4F8FF');
+ assert.equal(dark[0],'0D1A2D');
+ assert.equal(dark[15],'091525');
  for(const [mode,v] of [['Light',light],['Dark',dark]]){
   assert.ok(contrast(v[9],v[0])>=7,mode+' toolbar text');
   assert.ok(contrast(v[10],v[1])>=4.5,mode+' muted tab text');
