@@ -131,8 +131,44 @@ jobs:
           foreach($marker in @('CGWA_COMPANION_SELFTEST PASS','CGWA_SELFTEST PASS','CGWA_LAST_TAB_SELFTEST PASS','CGWA_UI_TAB_CLOSE_SELFTEST PASS','CGWA_THEME_SELFTEST PASS','CGWA_SHUTDOWN FINALIZE','CGWA_SHUTDOWN WINDOW_DESTROYED')){
             if(-not $text.Contains($marker)){ throw "missing marker: $marker" }
           }
-          if($text -match 'CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL|FATAL|stack smashing'){ throw 'native failure marker present' }
+          if($text -match 'CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL|FATAL|stack smashing|SIGSEGV|segfault|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable'){ throw 'native failure marker present' }
           Write-Output 'WINDOWS_NATIVE_LIFECYCLE_PASS'
+
+      - name: Owner native live tab counter (isolated Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path 'build-windows/bin/chatgpt-cef-v2.exe').Path
+          $profile=Join-Path $env:RUNNER_TEMP 'cgwa-win-native-profile'
+          if(!(Test-Path -LiteralPath $profile)){throw 'OWNER_COUNTER_PRIVATE_PROFILE_MISSING'}
+          $log=Join-Path $profile 'counter_debug.log'
+          $args=@(
+            "--cgwa-profile-dir=$profile",
+            '--background-test',
+            '--live-tab-counter-self-test',
+            '--shutdown-self-test',
+            '--disable-gpu',
+            '--host-resolver-rules=MAP * ~NOTFOUND',
+            "--log-file=$log"
+          )
+          $p=Start-Process -FilePath $exe -ArgumentList $args -PassThru
+          if(-not $p.WaitForExit(20000)){
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw 'owner counter timeout'
+          }
+          if($p.ExitCode -ne 0){throw "owner counter exit=$($p.ExitCode)"}
+          if(!(Test-Path -LiteralPath $log)){throw 'owner counter log missing'}
+          $text=Get-Content -LiteralPath $log -Raw
+          if($text -notmatch 'CGWA_LIVE_TAB_COUNTER_SELFTEST PASS first=1 last=1 restored=1'){
+            throw 'native live counter marker missing'
+          }
+          if($text -notmatch 'CGWA_SHUTDOWN WINDOW_DESTROYED'){
+            throw 'native counter shutdown missing'
+          }
+          if($text -match 'CGWA_LIVE_TAB_COUNTER_SELFTEST FAIL|FATAL|stack smashing'){
+            throw 'native counter failure marker'
+          }
+          Write-Output 'WINDOWS_OWNER_COUNTER_NATIVE=PASS'
 
       - name: Package Windows preview
         shell: pwsh
@@ -199,6 +235,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: CEF-free native UI source, Theme and tab-X contract
         run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
+      - name: Transactional local upgrade and rollback failure-injection regressions
+        run: python3 -m unittest discover -s test -p test_local_upgrade.py -v
 
       - name: Install Linux build dependencies
         run: |
@@ -244,6 +282,12 @@ jobs:
           grep -q 'CGWA_SHUTDOWN FINALIZE' .qa/native-linux-chrome.log
           grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' .qa/native-linux-chrome.log
           ! grep -Eq 'FATAL|GPU process isn.t usable|segfault|stack smashing|trap|CGWA_COMPANION_SELFTEST FAIL|CGWA_SELFTEST FAIL|CGWA_LAST_TAB_SELFTEST FAIL|CGWA_THEME_SELFTEST FAIL|CGWA_UI_TAB_CLOSE_SELFTEST FAIL' .qa/native-linux-chrome.log
+          # Linux-only regression: Chromium utility subprocess errors may go
+          # to captured stderr, not to the parent chrome_debug.log.
+          if grep -Eiq 'stack smashing detected|SIGSEGV|segfault|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable|FATAL' .qa/native-linux.out; then
+            echo 'CEF_CHILD_FATAL_DIAGNOSTIC_FAIL (stdout/stderr)'
+            exit 36
+          fi
           sha256sum build/bin/chatgpt-cef-v2 | tee build/BINARY_SHA256-linux.txt
 
       - uses: actions/upload-artifact@v4

@@ -12,6 +12,11 @@ umask 077
 mkdir -m 700 -- "$root"
 profile="$root/profile"
 mkdir -m 700 -- "$profile"
+# This integration test targets HORIZONTAL tab dragging. Product defaults to
+# a vertical ChatGPT rail for new profiles, so pin the tested layout explicitly.
+# Only write under the isolated temporary test profile, never the user profile.
+printf 'horizontal\n' > "$profile/ui-tabs-orientation.state"
+chmod 600 "$profile/ui-tabs-orientation.state"
 printf 'active=0\nhttps://chatgpt.com/?r247=a\nhttps://chatgpt.com/?r247=b\n' > "$profile/tabs.state"
 original="$(sha256sum "$profile/tabs.state" | cut -d' ' -f1)"
 "$exe" --cgwa-profile-dir="$profile" \
@@ -41,7 +46,20 @@ echo "R248_X11_COORDS wid=$wid window=${x},${y0} source=${sx},${sy} target=${tx}
 xdotool mousemove --sync "$sx" "$sy"
 sleep 0.1
 xdotool mousedown 1
-sleep 0.25
+sleep 0.2
+# CEF samples root pointer at the first pressed-state callback. Start the
+# gesture WITHIN the source title, not after a long jump onto the target.
+# This is an actual drag handshake, not an artificial state mutation.
+xdotool mousemove --sync "$((sx + 8))" "$sy"
+ready=0
+for _ in $(seq 1 20); do
+  if [[ -f "$profile/chrome_debug.log" ]] &&
+     grep -Fq 'CGWA_NATIVE_DRAG_DIAG stage=press_sample ok=1 held=1 hit=1' "$profile/chrome_debug.log"; then
+    ready=1;break
+  fi
+  sleep 0.1
+done
+[[ "$ready" -eq 1 ]] || { echo R247_NATIVE_PRESS_HANDSHAKE_FAILED;exit 41; }
 xdotool mousemove --sync "$tx" "$sy"
 sleep 0.35
 xdotool mouseup 1

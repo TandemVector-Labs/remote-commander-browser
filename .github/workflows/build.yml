@@ -32,6 +32,10 @@ jobs:
           cmake --build build-companion -j2
       - name: Validate browser Light/Dark theme contrast and source
         run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
+      - name: Fail-closed native child stderr regression (mocked binary)
+        run: node --test test/runtime_selftest_stream.test.cjs
+      - name: Transactional local upgrade and rollback failure-injection regressions
+        run: python3 -m unittest discover -s test -p test_local_upgrade.py -v
       - name: Run native contract and Linux private-file guards
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
@@ -125,7 +129,107 @@ jobs:
             echo 'Native runtime error marker; gate failed'
             exit 33
           fi
+          # Child-process stack-canary aborts can reach stderr while the browser
+          # parent still exits 0 and chrome_debug.log looks clean.
+          if grep -Eiq 'stack smashing detected|SIGSEGV|segfault|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable|FATAL' .qa/companion-native-runtime.out; then
+            echo 'CEF_CHILD_FATAL_DIAGNOSTIC_FAIL (stdout/stderr)'
+            exit 36
+          fi
           echo 'COMPANION_NATIVE_RUNTIME=PASS (isolated unauthenticated profile; no session/tool authority claim)'
+
+      - name: Native X11 vertical Companion geometry (expanded + compact; isolated)
+        run: |
+          set -euo pipefail
+          vertical_ci_profile=''
+          trap 'if [[ -n "$vertical_ci_profile" && -d "$vertical_ci_profile" && "$vertical_ci_profile" == /tmp/cgwa-companion-vertical-ci.* ]]; then rm -rf -- "$vertical_ci_profile"; fi' EXIT
+          for mode in expanded compact; do
+            vertical_ci_profile=$(mktemp -d /tmp/cgwa-companion-vertical-ci.XXXXXX)
+            [[ "$vertical_ci_profile" == /tmp/cgwa-companion-vertical-ci.* && ! -L "$vertical_ci_profile" && -d "$vertical_ci_profile" ]] || exit 42
+            printf 'vertical\n' > "$vertical_ci_profile/ui-tabs-orientation.state"
+            chmod 600 "$vertical_ci_profile/ui-tabs-orientation.state"
+            if [[ "$mode" == compact ]]; then
+              printf 'compact\n' > "$vertical_ci_profile/ui-tabs-compact.state"
+              chmod 600 "$vertical_ci_profile/ui-tabs-compact.state"
+            fi
+            set +e
+            xvfb-run -a timeout 18 build/bin/chatgpt-cef-v2 \
+              --cgwa-profile-dir="$vertical_ci_profile" --background-test \
+              --log-file="$vertical_ci_profile/chrome_debug.log" \
+              --companion-self-test --shutdown-self-test \
+              '--host-resolver-rules=MAP * ~NOTFOUND' \
+              >".qa/companion-native-vertical-$mode.out" 2>&1
+            vertical_ci_rc=$?
+            set -e
+            [[ -f "$vertical_ci_profile/chrome_debug.log" ]] || { echo "VERTICAL_NATIVE_LOG_MISSING mode=$mode"; exit 43; }
+            cp "$vertical_ci_profile/chrome_debug.log" ".qa/companion-native-vertical-$mode.log"
+            [[ "$vertical_ci_rc" -eq 0 ]] || { echo "VERTICAL_NATIVE_RUNTIME_FAIL mode=$mode rc=$vertical_ci_rc"; exit 44; }
+            expected_compact=0
+            if [[ "$mode" == compact ]]; then expected_compact=1; fi
+            grep -q "CGWA_COMPANION_SELFTEST PASS.*vertical_tabs=1.*compact_rail=$expected_compact" ".qa/companion-native-vertical-$mode.log"
+            grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' ".qa/companion-native-vertical-$mode.log"
+            if grep -Eiq 'FATAL|GPU process isn.t usable|segfault|SIGSEGV|stack smashing|stack buffer overflow|AddressSanitizer|ThreadSanitizer' \
+              ".qa/companion-native-vertical-$mode.log" ".qa/companion-native-vertical-$mode.out"; then
+              echo "VERTICAL_NATIVE_FATAL_DIAGNOSTIC mode=$mode"
+              exit 45
+            fi
+            printf 'COMPANION_VERTICAL_NATIVE=PASS mode=%s\n' "$mode"
+            rm -rf -- "$vertical_ci_profile"
+            vertical_ci_profile=''
+          done
+
+      - name: Owner visual feedback native fullscreen and right Companion regression
+        run: |
+          set -euo pipefail
+          profile=$(mktemp -d /tmp/cgwa-owner-fullscreen-XXXXXX)
+          [[ "$profile" == /tmp/cgwa-owner-fullscreen-* && -d "$profile" && ! -L "$profile" ]] || exit 61
+          trap 'rm -rf -- "$profile"' EXIT
+          set +e
+          xvfb-run -a timeout 16 build/bin/chatgpt-cef-v2 \
+            --cgwa-profile-dir="$profile" --background-test \
+            --log-file="$profile/chrome_debug.log" \
+            --fullscreen-tabs-self-test --shutdown-self-test \
+            '--host-resolver-rules=MAP * ~NOTFOUND' \
+            >.qa/owner-fullscreen.out 2>&1
+          rc=$?
+          set -e
+          if [[ -f "$profile/chrome_debug.log" ]]; then
+            cp "$profile/chrome_debug.log" .qa/owner-fullscreen-chrome.log
+          fi
+          [[ "$rc" -eq 0 ]] || { echo "OWNER_FULLSCREEN_NATIVE_EXIT=$rc"; exit 62; }
+          grep -Eq 'CGWA_FULLSCREEN_TABS_SELFTEST PASS.*rail_toggle=1.*commander_right=1.*header_toggle=1' .qa/owner-fullscreen-chrome.log
+          grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' .qa/owner-fullscreen-chrome.log
+          if grep -Eiq 'FATAL|segfault|SIGSEGV|stack smashing|CGWA_FULLSCREEN_TABS_SELFTEST FAIL' \
+            .qa/owner-fullscreen-chrome.log .qa/owner-fullscreen.out; then
+            echo OWNER_FULLSCREEN_NATIVE_FATAL
+            exit 63
+          fi
+          echo OWNER_FULLSCREEN_NATIVE_UI=PASS
+
+      - name: Owner native live tab counter (no theme rebuild; isolated)
+        run: |
+          set -euo pipefail
+          profile=$(mktemp -d /tmp/cgwa-counter-ci-XXXXXX)
+          [[ "$profile" == /tmp/cgwa-counter-ci-* && -d "$profile" && ! -L "$profile" ]] || exit 64
+          trap 'rm -rf -- "$profile"' EXIT
+          set +e
+          xvfb-run -a timeout 16 build/bin/chatgpt-cef-v2 \
+            --cgwa-profile-dir="$profile" --background-test \
+            --log-file="$profile/chrome_debug.log" \
+            --live-tab-counter-self-test --shutdown-self-test \
+            '--host-resolver-rules=MAP * ~NOTFOUND' \
+            >.qa/owner-live-counter.out 2>&1
+          rc=$?
+          set -e
+          [[ "$rc" -eq 0 ]] || { echo "OWNER_COUNTER_NATIVE_EXIT=$rc"; exit 65; }
+          cp "$profile/chrome_debug.log" .qa/owner-live-counter.log
+          grep -q 'CGWA_LIVE_TAB_COUNTER_SELFTEST PASS first=1 last=1 restored=1' .qa/owner-live-counter.log
+          grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' .qa/owner-live-counter.log
+          if grep -Eiq 'FATAL|SIGSEGV|stack smashing|CGWA_LIVE_TAB_COUNTER_SELFTEST FAIL' \
+            .qa/owner-live-counter.log .qa/owner-live-counter.out; then
+            echo OWNER_COUNTER_NATIVE_FATAL
+            exit 66
+          fi
+          echo OWNER_COUNTER_NATIVE=PASS
 
       - name: R247 real native X11 mouse drag (isolated unauthenticated profile)
         run: |
