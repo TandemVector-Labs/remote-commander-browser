@@ -16,7 +16,7 @@ const contrast=(a,b)=>(Math.max(relativeLuminance(a),relativeLuminance(b))+.05)/
  (Math.min(relativeLuminance(a),relativeLuminance(b))+.05);
 
 test('glass effect uses opaque native surfaces, no blur, shadow compositors or new web views',()=>{
- assert.match(palette,/deliberately|one opaque native paint surface/);
+ assert.match(palette,/Opaque CEF Views surfaces are intentional/);
  assert.doesNotMatch(cc,/BackdropFilter|BlurView|GaussianBlur|SetOpacity\(|windowless_rendering_enabled|CSSFilter/);
  assert.doesNotMatch(palette,/0x(?:0[0-9A-F]{6}|[1-9A-E][0-9A-F]{6})u/);
  assert.equal((cc.match(/CreateBrowserView\(/g)||[]).length,1);
@@ -31,14 +31,14 @@ test('new profiles default to navy, persisted light/dark preferences remain resp
  assert.match(cc,/return rc_ui::ThemeMode::Dark;[\s\S]*?\}/);
  assert.match(cc,/SaveThemePreference/);
 });
-test('native workspace labels are ChatGPT-specific, not a generic URL browser facade',()=>{
+test('native workspace is clearly distinguished from page-owned ChatGPT chat',()=>{
  assert.match(cc,/SetTitle\("ChatGPT Commander"\)/);
- assert.match(cc,/desktop workspace/);
- assert.match(cc,/◆  ChatGPT/);
+ assert.match(cc,/native workspace/);
+ assert.match(cc,/◈  RC Browser/);
  assert.match(cc,/if \(ec == std::errc::no_such_file_or_directory\) return true/);
- assert.match(cc,/New Chat/);
- assert.match(cc,/Open ChatGPT in a new workspace tab/);
- assert.match(cc,/sidebar_new_tab_button_->SetText\(compact \? "\+" : "\+   New Chat"\)/);
+ assert.match(cc,/New tab/);
+ assert.match(cc,/Open Browser tab/);
+ assert.match(cc,/sidebar_new_tab_button_->SetText\(compact \? "\+" : "＋  New tab"\)/);
  assert.match(cc,/https:\/\/chatgpt\.com\//);
  assert.doesNotMatch(cc,/DeleteAllCookies|clearBrowsingData|--no-sandbox|--disable-web-security/);
 });
@@ -67,8 +67,8 @@ test('native X11 horizontal tab-drag fixture opts into horizontal layout explici
 
 test('ChatGPT quick actions are visible, compact and paint with palette contrast',()=>{
  assert.match(cc,/if \(id == kNewTabButton\)\s*return CefSize\(owner_ && owner_->compact_toolbar_cached_ \? 40 : 116, 36\)/);
- assert.match(cc,/auto add = make_button\(kNewTabButton, "＋ New Chat", UiPalette\(\)\.softAccent\)/);
- assert.match(cc,/button->AsLabelButton\(\)->SetText\(compact_toolbar \? "＋" : "＋ New Chat"\)/);
+ assert.match(cc,/auto add = make_button\(kNewTabButton, "＋ New tab", UiPalette\(\)\.softAccent\)/);
+ assert.match(cc,/button->AsLabelButton\(\)->SetText\(compact_toolbar \? "＋" : "＋ New tab"\)/);
  assert.match(cc,/sidebar_new->SetBackgroundColor\(UiPalette\(\)\.softAccent\)/);
  assert.match(cc,/sidebar_new_tab_button_->SetBackgroundColor\(UiPalette\(\)\.softAccent\)/);
  assert.match(cc,/id == kSidebarNewTabButton\) \{[\s\S]*?bg = hot \? UiPalette\(\)\.tabHover : UiPalette\(\)\.softAccent/);
@@ -85,8 +85,8 @@ test('ChatGPT quick actions are visible, compact and paint with palette contrast
 
 test('narrow ChatGPT brand remains identifiable without stealing full title space',()=>{
  assert.match(cc,/if \(id == kBrandButton\)\s*return CefSize\(owner_ && owner_->narrow_toolbar_cached_ \? 44 : kBrandWidth, 36\)/);
- assert.match(cc,/id == kBrandButton\) \{[\s\S]*?SetText\(narrow_toolbar \? "◆" : "◆  ChatGPT"\);\s*button->SetVisible\(true\)/);
- assert.match(cc,/SetAccessibleName\("ChatGPT Commander desktop workspace"\)/);
+ assert.match(cc,/id == kBrandButton\) \{[\s\S]*?SetText\(narrow_toolbar \? "◈" : "◈  RC Browser"\);\s*button->SetVisible\(true\)/);
+ assert.match(cc,/SetAccessibleName\("Remote Commander Browser native workspace"\)/);
  assert.match(cc,/new_bounds\.width < 690/);
  assert.equal((cc.match(/CreateBrowserView\(/g)||[]).length,1);
 });
