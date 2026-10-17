@@ -12,6 +12,11 @@ umask 077
 mkdir -m 700 -- "$root"
 profile="$root/profile"
 mkdir -m 700 -- "$profile"
+# This integration test targets HORIZONTAL tab dragging. Product defaults to
+# a vertical ChatGPT rail for new profiles, so pin the tested layout explicitly.
+# Only write under the isolated temporary test profile, never the user profile.
+printf 'horizontal\n' > "$profile/ui-tabs-orientation.state"
+chmod 600 "$profile/ui-tabs-orientation.state"
 printf 'active=0\nhttps://chatgpt.com/?r247=a\nhttps://chatgpt.com/?r247=b\n' > "$profile/tabs.state"
 original="$(sha256sum "$profile/tabs.state" | cut -d' ' -f1)"
 "$exe" --cgwa-profile-dir="$profile" \

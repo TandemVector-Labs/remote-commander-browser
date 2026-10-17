@@ -55,3 +55,12 @@ test('accessible CTA remains legible in daylight/navy and dark mode retains cont
  assert.match(cc,/compact_toolbar_cached_ \? 40 : 112/);
  assert.match(cc,/id == kSidebarCompanionButton/);
 });
+
+test('native X11 horizontal tab-drag fixture opts into horizontal layout explicitly',()=>{
+ const drag=fs.readFileSync(path.join(__dirname,'native-tab-drag-x11.sh'),'utf8');
+ assert.match(drag,/printf 'horizontal\\n'/);
+ assert.match(drag,/ui-tabs-orientation\.state/);
+ assert.match(drag,/chmod 600/);
+ assert.match(drag,/R247_NATIVE_DRAG_PASS/);
+ assert.doesNotMatch(drag,/--no-sandbox/);
+});
