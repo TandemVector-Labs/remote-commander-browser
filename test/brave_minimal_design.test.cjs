@@ -36,7 +36,7 @@ test('Modern quiet browser chrome is accessible in both themes',()=>{
 });
 test('Minimal native toolbar still exposes critical actions and shortcuts',()=>{
   assert.match(ui,/kBrandWidth = 108;/);
-  assert.match(ui,/"◆  RC"/);
+  assert.match(ui,/"◆  ChatGPT"/);
   assert.match(ui,/"◈ Commander"/);
   assert.match(ui,/"☾" : "☼"/);
   assert.match(ui,/SetAccessibleName\("Toggle read-only Commander companion"\)/);
@@ -49,7 +49,7 @@ test('Minimal native toolbar still exposes critical actions and shortcuts',()=>{
 test('The layout remains native; page, profile and renderer untouched',()=>{
   assert.match(ui,/CefPanel::CreatePanel\(sidebar_surface_delegate_\)/);
   assert.match(ui,/CefLabelButton::CreateLabelButton/);
-  assert.match(ui,/SetInkDropEnabled\(true\)/);
+  assert.match(ui,/SetInkDropEnabled\(false\)/);
   assert.match(ui,/kSidebarCompactWidth = 54;/);
   assert.match(ui,/kHeaderHeight = 52;/);
   assert.match(ui,/RetireTabUi\(\*it\)/);

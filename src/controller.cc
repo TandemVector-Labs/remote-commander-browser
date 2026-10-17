@@ -101,7 +101,7 @@ constexpr int kVKeyPageUp = 0x21;
 constexpr int kVKeyPageDown = 0x22;
 
 // R98 user-selected private browser theme, updated only on the CEF UI thread.
-rc_ui::ThemeMode g_ui_theme = rc_ui::ThemeMode::Light;
+rc_ui::ThemeMode g_ui_theme = rc_ui::ThemeMode::Dark;
 const rc_ui::ThemePalette& UiPalette() { return rc_ui::Palette(g_ui_theme); }
 const rc_ui::SidebarPalette& UiSidebarPalette() {
   return rc_ui::Sidebar(g_ui_theme);
@@ -164,6 +164,9 @@ bool ReadVerticalTabsPreference() {
   const auto path = std::filesystem::u8path(TabsOrientationStatePath());
   std::error_code ec;
   const auto status = std::filesystem::symlink_status(path, ec);
+  // New ChatGPT workspaces show the native conversation rail by default.
+  // Existing users' saved horizontal/vertical preference is authoritative.
+  if (ec == std::errc::no_such_file_or_directory) return true;
   if (ec || !std::filesystem::is_regular_file(status) ||
       std::filesystem::is_symlink(status)) return false;
   std::ifstream input(path);
@@ -254,9 +257,12 @@ std::string ThemeStatePath() {
 rc_ui::ThemeMode ReadThemePreference() {
   std::ifstream input(std::filesystem::u8path(ThemeStatePath()));
   std::string value;
-  if (std::getline(input, value) && value == "dark")
-    return rc_ui::ThemeMode::Dark;
-  return rc_ui::ThemeMode::Light;
+  if (std::getline(input, value)) {
+    if (value == "light") return rc_ui::ThemeMode::Light;
+    if (value == "dark") return rc_ui::ThemeMode::Dark;
+  }
+  // Default for new profiles only; never overwrite an existing saved choice.
+  return rc_ui::ThemeMode::Dark;
 }
 
 bool SaveThemePreference(rc_ui::ThemeMode mode) {
@@ -579,7 +585,7 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   CEF_REQUIRE_UI_THREAD();
   window_ = window;
   window_created_ = true;
-  window_->SetTitle("Remote Commander Browser");
+  window_->SetTitle("ChatGPT Commander");
   ApplyChromeColorScheme();
   SetX11WindowClass(window_);
   BuildWindowUI();
@@ -880,20 +886,20 @@ void AppController::BuildWindowUI() {
   sidebar_toggle->SetBackgroundColor(UiSidebarPalette().background);
   sidebar_toggle->SetEnabledTextColors(UiSidebarPalette().text);
   sidebar_toggle->SetFontList(kUIBoldFont);
-  sidebar_toggle->SetInkDropEnabled(true);
+  sidebar_toggle->SetInkDropEnabled(false);
   sidebar_toggle->SetTooltipText("Expand / collapse vertical tabs");
   sidebar_toggle->SetAccessibleName("Collapse or expand tab sidebar");
   sidebar_toggle_button_ = sidebar_toggle;
   sidebar_->AddChildView(sidebar_toggle);
   auto sidebar_new = CefLabelButton::CreateLabelButton(
-      button_delegate_, sidebar_compact_ ? "+" : "+   New tab");
+      button_delegate_, sidebar_compact_ ? "+" : "+   New Chat");
   sidebar_new->SetID(kSidebarNewTabButton);
   sidebar_new->SetBackgroundColor(UiSidebarPalette().background);
   sidebar_new->SetEnabledTextColors(UiSidebarPalette().text);
   sidebar_new->SetFontList(kUIFont);
-  sidebar_new->SetInkDropEnabled(true);
-  sidebar_new->SetTooltipText("New tab (Ctrl+T)");
-  sidebar_new->SetAccessibleName("New tab");
+  sidebar_new->SetInkDropEnabled(false);
+  sidebar_new->SetTooltipText("Open ChatGPT in a new workspace tab (Ctrl+T)");
+  sidebar_new->SetAccessibleName("Open ChatGPT workspace tab");
   sidebar_new_tab_button_ = sidebar_new;
   sidebar_->AddChildView(sidebar_new);
   // Fullscreen vertical mode hides the top header; orientation and Companion
@@ -904,7 +910,7 @@ void AppController::BuildWindowUI() {
   sidebar_orientation->SetBackgroundColor(UiSidebarPalette().background);
   sidebar_orientation->SetEnabledTextColors(UiSidebarPalette().text);
   sidebar_orientation->SetFontList(kUIFont);
-  sidebar_orientation->SetInkDropEnabled(true);
+  sidebar_orientation->SetInkDropEnabled(false);
   sidebar_orientation->SetTooltipText("Switch to horizontal tabs (Ctrl+Shift+E)");
   sidebar_orientation->SetAccessibleName("Use horizontal tabs");
   sidebar_orientation_button_ = sidebar_orientation;
@@ -915,7 +921,7 @@ void AppController::BuildWindowUI() {
   sidebar_companion->SetBackgroundColor(UiPalette().primary);
   sidebar_companion->SetEnabledTextColors(UiPalette().content);
   sidebar_companion->SetFontList(kUIFont);
-  sidebar_companion->SetInkDropEnabled(true);
+  sidebar_companion->SetInkDropEnabled(false);
   sidebar_companion->SetTooltipText("Toggle right-hand Commander panel (Ctrl+Shift+C)");
   sidebar_companion->SetAccessibleName("Toggle Commander on the right");
   sidebar_companion_button_ = sidebar_companion;
@@ -969,16 +975,16 @@ void AppController::BuildHeaderControls() {
     button->SetBackgroundColor(bg);
     button->SetEnabledTextColors(UiPalette().text);
     button->SetFontList(kUIFont);
-    button->SetInkDropEnabled(true);
+    button->SetInkDropEnabled(false);
     return button;
   };
 
   // Compact product mark; identity remains available to screen readers.
-  auto brand = make_button(kBrandButton, "◆  RC", UiPalette().header);
+  auto brand = make_button(kBrandButton, "◆  ChatGPT", UiPalette().header);
   brand->SetFontList(kUIBoldFont);
   brand->SetEnabledTextColors(UiPalette().text);
-  brand->SetAccessibleName("Remote Commander Browser application");
-  brand->SetTooltipText("Remote Commander Browser — private native window");
+  brand->SetAccessibleName("ChatGPT Commander desktop workspace");
+  brand->SetTooltipText("ChatGPT Commander — private native workspace");
   header_buttons_.push_back(brand);
   header_->AddChildView(brand);
 
@@ -1019,8 +1025,8 @@ void AppController::BuildHeaderControls() {
 
   auto add = make_button(kNewTabButton, "＋", UiPalette().button);
   add->SetEnabledTextColors(UiPalette().activeText);
-  add->SetTooltipText("New tab (Ctrl+T)");
-  add->SetAccessibleName("New tab");
+  add->SetTooltipText("Open ChatGPT in a new workspace tab (Ctrl+T)");
+  add->SetAccessibleName("Open ChatGPT workspace tab");
   header_buttons_.push_back(add);
   header_->AddChildView(add);
 
@@ -1034,8 +1040,8 @@ void AppController::BuildHeaderControls() {
   auto theme = make_button(
       kThemeButton, g_ui_theme == rc_ui::ThemeMode::Dark ? "☾" : "☼",
       UiPalette().softAccent);
-  theme->SetTooltipText("Switch Light/Dark appearance (private browser setting)");
-  theme->SetAccessibleName("Switch browser theme");
+  theme->SetTooltipText("Switch ChatGPT workspace appearance (private setting)");
+  theme->SetAccessibleName("Switch ChatGPT workspace theme");
   theme_button_ = theme;
   header_buttons_.push_back(theme);
   header_->AddChildView(theme);
@@ -1338,7 +1344,8 @@ void AppController::NewTab(const std::string& url) {
     tabs_.pop_back();
     return;
   }
-  // Overlay BrowserViews are hidden by default. Only the active tab is shown.
+  // Memory policy: exactly one existing CEF BrowserView per workspace tab,
+  // no additional UI web renderer; inactive overlay views remain hidden.
   added.overlay->SetVisible(false);
   LayoutTabOverlays();
   SetActiveTabInternal(added.id);
@@ -2308,7 +2315,7 @@ void AppController::RebuildTabStrip() {
         compact ? "Expand vertical tabs" : "Collapse vertical tabs");
   }
   if (sidebar_new_tab_button_)
-    sidebar_new_tab_button_->SetText(compact ? "+" : "+   New tab");
+    sidebar_new_tab_button_->SetText(compact ? "+" : "+   New Chat");
   if (sidebar_orientation_button_)
     sidebar_orientation_button_->SetText(compact ? "⇥" : "⇥  Horizontal tabs");
   if (sidebar_companion_button_)
@@ -2373,7 +2380,7 @@ void AppController::RebuildTabStrip() {
     title->SetFontList(vertical && SidebarCompactEffective()
                            ? kCompactTabFont :
                        (tab.id == active_tab_id_ ? kUIBoldFont : kUIFont));
-    title->SetInkDropEnabled(true);
+    title->SetInkDropEnabled(false);
     title->SetTooltipText(tab.title);
     title->SetAccessibleName("Activate tab " + std::to_string(i + 1) +
                              ": " + tab.title);
@@ -2388,7 +2395,7 @@ void AppController::RebuildTabStrip() {
     close->SetFontList(kUIFont);
     close->SetTooltipText("Close tab");
     close->SetAccessibleName("Close tab " + std::to_string(i + 1));
-    close->SetInkDropEnabled(true);
+    close->SetInkDropEnabled(false);
 
     item->AddChildView(title);
     item->AddChildView(close);
