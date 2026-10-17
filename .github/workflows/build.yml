@@ -195,6 +195,32 @@ jobs:
           fi
           echo OWNER_FULLSCREEN_NATIVE_UI=PASS
 
+      - name: Owner native live tab counter (no theme rebuild; isolated)
+        run: |
+          set -euo pipefail
+          profile=$(mktemp -d /tmp/cgwa-counter-ci-XXXXXX)
+          [[ "$profile" == /tmp/cgwa-counter-ci-* && -d "$profile" && ! -L "$profile" ]] || exit 64
+          trap 'rm -rf -- "$profile"' EXIT
+          set +e
+          xvfb-run -a timeout 16 build/bin/chatgpt-cef-v2 \
+            --cgwa-profile-dir="$profile" --background-test \
+            --log-file="$profile/chrome_debug.log" \
+            --live-tab-counter-self-test --shutdown-self-test \
+            '--host-resolver-rules=MAP * ~NOTFOUND' \
+            >.qa/owner-live-counter.out 2>&1
+          rc=$?
+          set -e
+          [[ "$rc" -eq 0 ]] || { echo "OWNER_COUNTER_NATIVE_EXIT=$rc"; exit 65; }
+          cp "$profile/chrome_debug.log" .qa/owner-live-counter.log
+          grep -q 'CGWA_LIVE_TAB_COUNTER_SELFTEST PASS first=1 last=1 restored=1' .qa/owner-live-counter.log
+          grep -q 'CGWA_SHUTDOWN WINDOW_DESTROYED' .qa/owner-live-counter.log
+          if grep -Eiq 'FATAL|SIGSEGV|stack smashing|CGWA_LIVE_TAB_COUNTER_SELFTEST FAIL' \
+            .qa/owner-live-counter.log .qa/owner-live-counter.out; then
+            echo OWNER_COUNTER_NATIVE_FATAL
+            exit 66
+          fi
+          echo OWNER_COUNTER_NATIVE=PASS
+
       - name: R247 real native X11 mouse drag (isolated unauthenticated profile)
         run: |
           bash -n test/native-tab-drag-x11.sh

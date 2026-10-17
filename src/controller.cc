@@ -629,6 +629,15 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
       if (auto* app = AppController::Get()) app->RunFullscreenTabsSelfTest();
     }), 800);
   }
+  if (command_line && command_line->HasSwitch("live-tab-counter-self-test")) {
+    if (!background_test) {
+      LOG(ERROR) << "CGWA_LIVE_TAB_COUNTER_REQUIRES_BACKGROUND";
+    } else {
+      CefPostDelayedTask(TID_UI, base::BindOnce([]() {
+        if (auto* app = AppController::Get()) app->RunLiveTabCounterSelfTest();
+      }), 1100);
+    }
+  }
 
   if (command_line && command_line->HasSwitch("self-test"))
     RunBackgroundSelfTest();
@@ -1882,6 +1891,35 @@ void AppController::TabLifetimeSoakStep(int cycle) {
       }, cycle), 2000);
     }
   }, cycle, closed_id), 450);
+}
+
+void AppController::RunLiveTabCounterSelfTest() {
+  CEF_REQUIRE_UI_THREAD();
+  if (closing_ || !window_ || !tab_switcher_button_) return;
+  const int original = active_tab_id_;
+  // Disposable background-only profile: no authenticated page, no user tabs.
+  while (tabs_.size() < 3) NewTab();
+  const int first = tabs_.front().id;
+  const int last = tabs_.back().id;
+  const std::string count = std::to_string(tabs_.size());
+  SetActiveTabInternal(first);
+  const bool first_ok = tab_switcher_button_->GetText().ToString() ==
+      "1 / " + count;
+  // Must take the already-visible fast path; do not force a theme/strip rebuild.
+  SetActiveTabInternal(last);
+  const bool last_ok = tab_switcher_button_->GetText().ToString() ==
+      count + " / " + count;
+  SetActiveTabInternal(first);
+  const bool restore_ok = tab_switcher_button_->GetText().ToString() ==
+      "1 / " + count;
+  SetActiveTabInternal(original);
+  const bool final_ok = tab_switcher_button_->GetText().ToString() !=
+      "0 / " + count;
+  LOG(WARNING) << "CGWA_LIVE_TAB_COUNTER_SELFTEST "
+               << (first_ok && last_ok && restore_ok && final_ok ?
+                       "PASS" : "FAIL")
+               << " first=" << first_ok << " last=" << last_ok
+               << " restored=" << restore_ok << " tabs=" << tabs_.size();
 }
 
 void AppController::RunFullscreenTabsSelfTest() {

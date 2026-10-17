@@ -105,6 +105,7 @@ class AppController {
   bool SidebarCompactEffective() const;
   void RunVerticalTabsSelfTest();
   void RunFullscreenTabsSelfTest();
+  void RunLiveTabCounterSelfTest();
   void BuildHeaderControls();
   void UpdateDraggableRegions();
   void RebuildTabStrip();

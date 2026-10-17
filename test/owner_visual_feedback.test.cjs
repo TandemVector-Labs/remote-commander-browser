@@ -104,3 +104,15 @@ test('Commander monitor explicitly separates local Core health from unproven cha
  assert.match(cc,/companion::ReadMonitor\(root\)/);
  assert.doesNotMatch(tick,/GetCookies|ExecuteJavaScript|SendProcessMessage|StartWorkflow/);
 });
+
+
+test('native self-test changes the active tab counter without theme or chrome rebuild',()=>{
+ const run=fn('void AppController::RunLiveTabCounterSelfTest() {','void AppController::RunFullscreenTabsSelfTest() {');
+ assert.match(run,/SetActiveTabInternal\(first\)/);
+ assert.match(run,/SetActiveTabInternal\(last\)/);
+ assert.match(run,/CGWA_LIVE_TAB_COUNTER_SELFTEST/);
+ assert.match(run,/first_ok && last_ok && restore_ok && final_ok/);
+ assert.match(cc,/HasSwitch\("live-tab-counter-self-test"\)/);
+ assert.match(cc,/CGWA_LIVE_TAB_COUNTER_REQUIRES_BACKGROUND/);
+ assert.doesNotMatch(run,/ToggleTheme\(/);
+});
