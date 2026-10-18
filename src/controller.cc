@@ -2280,9 +2280,14 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
       const int tab_id = id >= kTabCloseBase ? id - kTabCloseBase
                                              : id - kTabButtonBase;
       const auto& swatch = rc_ui::TabIdentityHue(g_ui_theme, tab_id);
-      bg = (id >= kTabCloseBase && hot) ? UiPalette().dangerHover :
-          (tab_id == active_tab_id_ ? swatch.active :
-           (hot ? swatch.hover : swatch.idle));
+      // CefLabelButton backgrounds are rectangular. In the compact native
+      // rail the circular badge itself conveys hue and selection; painting a
+      // rectangular active/hover swatch around it defeats that geometry.
+      const bool compact_rail = VerticalTabsVisible() && SidebarCompactEffective();
+      bg = compact_rail ? UiSidebarPalette().background :
+          ((id >= kTabCloseBase && hot) ? UiPalette().dangerHover :
+           (tab_id == active_tab_id_ ? swatch.active :
+            (hot ? swatch.hover : swatch.idle)));
       fg = (id >= kTabCloseBase && hot)
           ? UiPalette().dangerText : UiPalette().text;
     } else if (NativeControlSlot(id) >= 0) {
@@ -2435,7 +2440,10 @@ CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
   for (const int scale : {1, 2}) {
     const int n = 26 * scale;
     std::vector<unsigned char> pixels(static_cast<size_t>(n*n*4), 0);
-    const float radius = 11.25f * scale;
+    // The active preview badge is a ringed circle rather than a square
+    // native selection tile. The ring is separated from the fill by air.
+    const bool outlined = g_native_colors_preview && active;
+    const float radius = (outlined ? 10.05f : 11.25f) * scale;
     const float mid = 13.0f * scale;
     const int width = 2 * scale;
     const int left = 13 * scale - 3 * scale;
@@ -2444,19 +2452,31 @@ CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
       for (int x = 0; x < n; ++x) {
         const float dx = x + 0.5f - mid;
         const float dy = y + 0.5f - mid;
-        const float opacity = std::clamp(radius - std::sqrt(dx*dx + dy*dy) +
-                                        0.5f, 0.0f, 1.0f);
+        const float distance = std::sqrt(dx*dx + dy*dy);
+        const float body_alpha = std::clamp(radius - distance + 0.5f,
+                                            0.0f, 1.0f);
+        const float outline_alpha = outlined
+            ? std::clamp(12.55f*scale - distance + 0.5f, 0.0f, 1.0f) *
+              std::clamp(distance - 11.15f*scale + 0.5f, 0.0f, 1.0f)
+            : 0.0f;
+        const bool is_outline = outline_alpha > body_alpha;
+        const float opacity = std::max(body_alpha, outline_alpha);
         if (opacity <= 0) continue;
         const int px = (x - left) / width;
         const int py = (y - top) / width;
         const bool digit = x >= left && y >= top &&
             px >= 0 && px < 3 && py >= 0 && py < 5 &&
             (digits[ordinal - 1][py] & (1 << (2 - px))) != 0;
-        const cef_color_t color = digit ? fg : base;
+        const cef_color_t outline_color =
+            g_ui_theme == rc_ui::ThemeMode::Dark ? 0xFFD1E1F7u : 0xFF344D74u;
+        const cef_color_t color = is_outline ? outline_color :
+                                  (digit ? fg : base);
         const size_t at = static_cast<size_t>((y*n + x)*4);
-        pixels[at] = channel(color,16);
-        pixels[at+1] = channel(color,8);
-        pixels[at+2] = channel(color,0);
+        // CefImage expects premultiplied RGBA; nonopaque edge pixels are
+        // premultiplied to avoid halo artifacts on dark backgrounds.
+        pixels[at] = static_cast<unsigned char>(channel(color,16)*opacity);
+        pixels[at+1] = static_cast<unsigned char>(channel(color,8)*opacity);
+        pixels[at+2] = static_cast<unsigned char>(channel(color,0)*opacity);
         pixels[at+3] = static_cast<unsigned char>(opacity * 255.0f);
       }
     }

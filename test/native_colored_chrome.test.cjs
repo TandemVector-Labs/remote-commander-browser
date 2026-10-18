@@ -56,3 +56,17 @@ test('normal Chrome and existing sessions remain unchanged unless preview is exp
   assert.match(code,/SetAccessibleName\("Close application"\)/);
   assert.match(header,/std::array<std::array<std::array<CefRefPtr<CefImage>, 16>, 2>, 2> chrome_badges_/);
 });
+
+test('compact colored rail has genuinely circular selected tab with visible focus ring',()=>{
+ assert.match(code,/const bool compact_rail = VerticalTabsVisible\(\) && SidebarCompactEffective\(\)/);
+ assert.match(code,/bg = compact_rail \? UiSidebarPalette\(\)\.background/);
+ assert.match(code,/const bool outlined = g_native_colors_preview && active/);
+ assert.match(code,/const float outline_alpha = outlined/);
+ assert.match(code,/std::max\(body_alpha, outline_alpha\)/);
+ assert.match(code,/const bool is_outline = outline_alpha > body_alpha/);
+ assert.match(code,/CEF_ALPHA_TYPE_POSTMULTIPLIED/);
+ assert.match(code,/channel\(color,16\)\*opacity/);
+ assert.match(code,/channel\(color,8\)\*opacity/);
+ assert.match(code,/channel\(color,0\)\*opacity/);
+ assert.match(code,/g_ui_theme == rc_ui::ThemeMode::Dark \? 0xFFD1E1F7u : 0xFF344D74u/);
+});
