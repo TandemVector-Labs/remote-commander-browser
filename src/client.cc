@@ -69,8 +69,14 @@ void AppClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
                           CefRefPtr<CefFrame> frame,
                           int httpStatusCode) {
   CEF_REQUIRE_UI_THREAD();
-  if (frame && frame->IsMain())
-    InjectRTL(frame);
+  // The first-party offline Home is *not* the ChatGPT document. Preserve
+  // RTL assistance only on the exact trusted ChatGPT host; never execute
+  // document scripts in rc-home://app/ or any authentication/external origin.
+  if (frame && frame->IsMain()) {
+    auto* controller = AppController::Get();
+    if (controller && controller->IsChatGPTURL(frame->GetURL().ToString()))
+      InjectRTL(frame);
+  }
 }
 
 void AppClient::OnLoadError(CefRefPtr<CefBrowser> browser,

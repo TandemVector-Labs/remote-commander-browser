@@ -29,6 +29,7 @@
 #include <system_error>
 
 #include "client.h"
+#include "first_party_home.h"
 #include "ui_chrome_layout.h"
 #include "ui_tab_order.h"
 #include "ui_tab_drag.h"
@@ -596,6 +597,12 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   SetX11WindowClass(window_);
   BuildWindowUI();
   window_->CenterWindow(CefSize(1240, 760));
+  // Explicit local QA viewport. Never change a normal or opted-in user's
+  // window size unless they also requested this narrow test dimension.
+  const auto preview_line = CefCommandLine::GetGlobalCommandLine();
+  if (preview_line && preview_line->HasSwitch("rc-home-preview") &&
+      preview_line->HasSwitch("rc-home-narrow-test"))
+    window_->SetBounds(CefRect(100, 80, 650, 700));
   window_->Show();
   auto command_line = CefCommandLine::GetGlobalCommandLine();
   const bool background_test =
@@ -619,7 +626,12 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   while (in && std::getline(in, line) && urls.size() < 8) {
     if (StartsWith(line, "https://")) urls.push_back(line);
   }
-  if (urls.empty()) urls.push_back("https://chatgpt.com/");
+  // Preview opt-in never discards existing saved ChatGPT URLs. A fresh
+  // disposable profile gets the local Home; ordinary users still get ChatGPT.
+  if (urls.empty())
+    urls.push_back(command_line && command_line->HasSwitch("rc-home-preview") &&
+                       rc_home::IsReady()
+                       ? rc_home::kUrl : "https://chatgpt.com/");
   for (const auto& url : urls) NewTab(url);
   if (active_index >= 0 && active_index < static_cast<int>(tabs_.size()))
     SetActiveTabInternal(tabs_[active_index].id);
@@ -2189,7 +2201,14 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
 void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
   CEF_REQUIRE_UI_THREAD();
   const int id = button->GetID();
-  if (id == kBrandButton) return;
+  if (id == kBrandButton) {
+    // Owner-invoked opt-in only. Never replace the current ChatGPT context.
+    const auto command_line = CefCommandLine::GetGlobalCommandLine();
+    if (command_line && command_line->HasSwitch("rc-home-preview") &&
+        rc_home::IsReady())
+      NewTab(rc_home::kUrl);
+    return;
+  }
   if (id == kNewTabButton) { NewTab(); return; }
   if (id == kTabSwitcherButton) { CycleTab(1); return; }
   if (id == kMoveTabLeftButton) { MoveActiveTab(-1); return; }
