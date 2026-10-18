@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "controller.h"
+#include "first_party_home.h"
 #include "include/base/cef_bind.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
@@ -24,8 +25,18 @@ void BrowserApp::OnBeforeCommandLineProcessing(
   }
 }
 
+void BrowserApp::OnRegisterCustomSchemes(
+    CefRawPtr<CefSchemeRegistrar> registrar) {
+  rc_home::RegisterScheme(registrar);
+}
+
 void BrowserApp::OnContextInitialized() {
   CEF_REQUIRE_UI_THREAD();
+  const auto cmd = CefCommandLine::GetGlobalCommandLine();
+  if (cmd && cmd->HasSwitch("rc-home-preview") &&
+      !rc_home::RegisterHandler()) {
+    LOG(ERROR) << "RC_HOME_PREVIEW_SCHEME_FAILED";
+  }
   controller_->CreateMainWindow();
 }
 
