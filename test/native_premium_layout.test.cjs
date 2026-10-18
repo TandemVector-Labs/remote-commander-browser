@@ -5,6 +5,12 @@ const h=fs.readFileSync(path.join(__dirname,"../src/controller.h"),"utf8");
 test("preview only has a usable native popup for secondary controls and direct actions remain",()=>{
  assert.match(s,/id == kChromeMoreButton && g_native_colors_preview/);
  assert.match(s,/CefMenuModel::CreateMenuModel\(chrome_menu_delegate_\)/);
+ assert.match(s,/CEF_MENU_COLOR_BACKGROUND, menu_bg/);
+ assert.match(s,/CEF_MENU_COLOR_BACKGROUND_HOVERED, menu_hover/);
+ assert.match(s,/CEF_MENU_COLOR_TEXT, menu_text/);
+ const menuFn=s.split("void AppController::ShowChromeMenu(")[1].split("void AppController::OnPolishMenuCommand(")[0];
+ assert.doesNotMatch(menuFn,/model->AddSeparator\(\)/);
+ assert.match(s,/dark_menu \? 0xFF203047u : 0xFFF8FAFDu/);
  assert.match(s,/window_->ShowMenu\(model,/);
  for(const label of ["Light appearance","Dark appearance","Vertical tab layout","Horizontal tab layout","Move active tab left","Move active tab right","Toggle Commander panel"])
   assert.ok(s.includes(label),label);

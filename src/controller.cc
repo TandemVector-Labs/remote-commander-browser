@@ -2381,16 +2381,24 @@ void AppController::ShowChromeMenu(CefRefPtr<CefButton> anchor) {
   if (!chrome_menu_delegate_) chrome_menu_delegate_ = new ChromeMenuDelegate(this);
   auto model = CefMenuModel::CreateMenuModel(chrome_menu_delegate_);
   if (!model) return;
+  // CEF's MenuModel exposes theme-specific native popup colors; do not
+  // tolerate an unrelated bright system menu on our navy Dark preview.
+  const bool dark_menu = g_ui_theme == rc_ui::ThemeMode::Dark;
+  const cef_color_t menu_bg = dark_menu ? 0xFF203047u : 0xFFF8FAFDu;
+  const cef_color_t menu_hover = dark_menu ? 0xFF334965u : 0xFFE7EFF8u;
+  const cef_color_t menu_text = dark_menu ? 0xFFEEF4FFu : 0xFF24354Cu;
+  model->SetColorAt(-1, CEF_MENU_COLOR_BACKGROUND, menu_bg);
+  model->SetColorAt(-1, CEF_MENU_COLOR_BACKGROUND_HOVERED, menu_hover);
+  model->SetColorAt(-1, CEF_MENU_COLOR_TEXT, menu_text);
+  model->SetColorAt(-1, CEF_MENU_COLOR_TEXT_HOVERED, menu_text);
   model->AddItem(kMenuTheme, g_ui_theme == rc_ui::ThemeMode::Dark
       ? "Light appearance" : "Dark appearance");
   model->AddItem(kMenuOrientation, VerticalTabsVisible()
       ? "Horizontal tab layout" : "Vertical tab layout");
-  model->AddSeparator();
   if (tabs_.size() > 1) {
     model->AddItem(kMenuMoveLeft, "Move active tab left");
     model->AddItem(kMenuMoveRight, "Move active tab right");
-    model->AddSeparator();
-  }
+    }
   model->AddItem(kMenuCommander, "Toggle Commander panel");
   const auto command_line = CefCommandLine::GetGlobalCommandLine();
   if (command_line && command_line->HasSwitch("rc-home-preview") &&
