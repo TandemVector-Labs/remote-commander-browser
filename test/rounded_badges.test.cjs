@@ -14,8 +14,9 @@ test('real circular alpha badges are rasterized natively, without a web context'
  assert.match(h,/tab_badges_/);
  assert.doesNotMatch(s,/CreateBrowserView\(.*[Rr]ound.*[Bb]adge/);
 });
-test('badges are cached per theme, active state and tab position',()=>{
- assert.match(s,/tab_badges_\[theme_slot\]\[mode\]\[ordinal - 1\]/);
+test('badges are cached per theme, opt-in state, tab identity and ordinal',()=>{
+ assert.match(s,/tab_badges_\[theme_slot\]\[g_native_colors_preview \? 1 : 0\]/);
+ assert.match(s,/\[mode\]\[hue\]\[ordinal - 1\]/);
  assert.match(s,/if \(stored\) return stored/);
  assert.match(s,/if \(badge && \(!shown \|\| !shown->IsSame\(badge\)\)\)/);
  assert.match(s,/GetText\(\).ToString\(\) != text/);

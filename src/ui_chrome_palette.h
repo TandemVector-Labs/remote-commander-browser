@@ -85,4 +85,31 @@ inline constexpr const SidebarPalette& Sidebar(ThemeMode mode) {
 inline constexpr const ThemePalette& Palette(ThemeMode mode) {
   return mode == ThemeMode::Dark ? kDarkPalette : kLightPalette;
 }
+// Preview-only, per-tab identity. Every tab ID has a deterministic hue;
+// moving/activating tabs does not change their identity. Maximum 8 visible.
+struct TabHue { std::uint32_t idle, active, hover, badge; };
+inline constexpr TabHue kLightTabHues[8]{
+  {0xFFEDF3FFu,0xFFD4E2FFu,0xFFE2ECFFu,0xFF325DAEu}, // ocean
+  {0xFFF2EEFFu,0xFFE2D9FFu,0xFFEAE3FFu,0xFF7455B8u}, // iris
+  {0xFFE8F7F4u,0xFFD0EEE7u,0xFFDCF4EEu,0xFF207F74u}, // teal
+  {0xFFF0F6E9u,0xFFE1EDCEu,0xFFE8F2DAu,0xFF5B7830u}, // sage
+  {0xFFFFF5E7u,0xFFFFE6C2u,0xFFFFEED5u,0xFF926022u}, // amber
+  {0xFFFFF0EDu,0xFFFFDCD4u,0xFFFFE7E0u,0xFF9F5142u}, // coral
+  {0xFFE9F4FFu,0xFFD2E7F8u,0xFFDFEEFCu,0xFF286D98u}, // sky
+  {0xFFF9EDFAu,0xFFF0D7F1u,0xFFF5E5F6u,0xFF945B95u}  // berry
+};
+inline constexpr TabHue kDarkTabHues[8]{
+  {0xFF203454u,0xFF345789u,0xFF2B4773u,0xFF6B9FECu},
+  {0xFF30284Eu,0xFF534477u,0xFF423761u,0xFFB69AEAu},
+  {0xFF193D3Bu,0xFF2A615Au,0xFF24504Bu,0xFF6FD0BCu},
+  {0xFF2D3A27u,0xFF4B6042u,0xFF3E5036u,0xFF9EC67Eu},
+  {0xFF433527u,0xFF715436u,0xFF59442Du,0xFFE9AD64u},
+  {0xFF482B32u,0xFF704750u,0xFF5C3740u,0xFFE89C9Du},
+  {0xFF233A4Cu,0xFF3F6580u,0xFF315269u,0xFF79B9DFu},
+  {0xFF422D42u,0xFF654766u,0xFF533954u,0xFFD8A0D7u}
+};
+inline constexpr const TabHue& TabIdentityHue(ThemeMode mode, int tab_id) {
+  const int index = ((tab_id - 1) % 8 + 8) % 8;
+  return mode == ThemeMode::Dark ? kDarkTabHues[index] : kLightTabHues[index];
+}
 }  // namespace rc_ui

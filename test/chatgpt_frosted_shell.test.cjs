@@ -72,7 +72,7 @@ test('ChatGPT quick actions are visible, compact and paint with palette contrast
  assert.match(cc,/sidebar_new->SetBackgroundColor\(UiPalette\(\)\.softAccent\)/);
  assert.match(cc,/sidebar_new_tab_button_->SetBackgroundColor\(UiPalette\(\)\.softAccent\)/);
  assert.match(cc,/id == kSidebarNewTabButton\) \{[\s\S]*?bg = hot \? UiPalette\(\)\.tabHover : UiPalette\(\)\.softAccent/);
- assert.match(cc,/const cef_color_t fg = active \? UiPalette\(\)\.content : UiSidebarPalette\(\)\.text/);
+ assert.match(cc,/const cef_color_t fg = g_native_colors_preview \? UiPalette\(\)\.content/);
  for(const theme of ['Light','Dark']){
   const p=colors(theme);
   assert.ok(contrast(p[11],p[6])>=4.5,theme+' New Chat label');

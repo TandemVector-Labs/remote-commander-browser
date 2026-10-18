@@ -41,6 +41,8 @@ test('only explicit preview switch enables handler; new saved sessions win',()=>
  assert.match(app,/HasSwitch\("rc-home-preview"\)/);
  assert.match(app,/!rc_home::RegisterHandler\(\)/);
  assert.match(controller,/if \(urls.empty\(\)\)\s*urls.push_back\(command_line && command_line->HasSwitch\("rc-home-preview"\)/);
+ assert.match(controller,/HasSwitch\("rc-home-start"\)/);
+ assert.match(controller, /command_line->HasSwitch\("rc-home-start"\) &&\s*rc_home::IsReady\(\)/);
  assert.match(controller,/rc_home::IsReady\(\)/);
  assert.match(controller,/HasSwitch\("rc-home-narrow-test"\)/);
  assert.match(controller,/SetBounds\(CefRect\(100, 80, 650, 700\)\)/);
