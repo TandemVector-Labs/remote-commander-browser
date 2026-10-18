@@ -11,6 +11,8 @@
 #include "commander_companion.h"
 #include "include/cef_browser.h"
 #include "include/cef_image.h"
+#include "include/cef_menu_model.h"
+#include "include/cef_menu_model_delegate.h"
 #include "include/cef_client.h"
 #include "include/views/cef_box_layout.h"
 #include "include/views/cef_browser_view.h"
@@ -60,6 +62,7 @@ class AppController {
   bool OnAccelerator(int command_id);
   void OnButtonPressed(CefRefPtr<CefButton> button);
   void OnButtonStateChanged(CefRefPtr<CefButton> button);
+  void OnPolishMenuCommand(int command_id);
 
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser);
   bool OnBrowserDoClose(CefRefPtr<CefBrowser> browser);
@@ -97,17 +100,19 @@ class AppController {
   class FixedPanelDelegate;
   class SidebarSurfaceDelegate;
   class HeaderSurfaceDelegate;
+  class ChromeMenuDelegate;
 
   void BuildWindowUI();
   bool VerticalTabsVisible() const;
   int SidebarWidth() const;
-  CefRefPtr<CefImage> RoundedTabBadge(int tab_id, bool active);
+  CefRefPtr<CefImage> RoundedTabBadge(int tab_id, bool active, bool hovered = false);
   CefRefPtr<CefImage> NativeControlIcon(int id, bool hot);
   bool SidebarCompactEffective() const;
   void RunVerticalTabsSelfTest();
   void RunFullscreenTabsSelfTest();
   void RunLiveTabCounterSelfTest();
   void BuildHeaderControls();
+  void ShowChromeMenu(CefRefPtr<CefButton> anchor);
   void UpdateDraggableRegions();
   void RebuildTabStrip();
   void UpdateTabSwitcherLabel();
@@ -157,6 +162,8 @@ class AppController {
   std::vector<CefRefPtr<CefLabelButton>> header_buttons_;
   CefRefPtr<CefLabelButton> tab_switcher_button_;
   CefRefPtr<CefLabelButton> theme_button_;
+  CefRefPtr<CefLabelButton> chrome_more_button_;
+  CefRefPtr<ChromeMenuDelegate> chrome_menu_delegate_;
   CefRefPtr<CefLabelButton> orientation_button_;
   CefRefPtr<CefLabelButton> sidebar_toggle_button_;
   CefRefPtr<CefLabelButton> sidebar_new_tab_button_;
@@ -187,7 +194,7 @@ class AppController {
     CefRefPtr<CefLabelButton> close;
   };
   // Native circular badge assets; lazily rasterized once per color-state.
-  std::array<std::array<std::array<std::array<std::array<CefRefPtr<CefImage>, 8>, 8>, 2>, 2>, 2> tab_badges_{};
+  std::array<std::array<std::array<std::array<std::array<CefRefPtr<CefImage>, 8>, 8>, 3>, 2>, 2> tab_badges_{};
   std::array<std::array<std::array<CefRefPtr<CefImage>, 16>, 2>, 2> chrome_badges_{};
   std::vector<RetiredUi> retired_ui_;
   std::vector<Tab> tabs_;
