@@ -14,9 +14,9 @@ test('compact and narrow chrome transition on width thresholds independently of 
  assert.match(header,/bool narrow_toolbar_cached_ = false/);
 });
 test('narrow mode preserves direct tab switching and keyboard-only actions',()=>{
- assert.match(src,/button->SetVisible\(!vertical && !compact_toolbar && tabs_\.size\(\) > 1\)/);
+ assert.match(src,/button->SetVisible\(!g_native_colors_preview && !vertical &&\s*!compact_toolbar && tabs_\.size\(\) > 1\)/);
  assert.match(src,/id == kCompanionButton\) \{[\s\S]*?SetText\(compact_toolbar \? "◈" : "◈ Commander"\);[\s\S]*?button->SetVisible\(!vertical\)/);
- assert.match(src,/id == kTabsOrientationButton\)\s*button->SetVisible\(!vertical\)/);
+ assert.match(src,/id == kTabsOrientationButton\)\s*button->SetVisible\(!g_native_colors_preview && !vertical\)/);
  assert.match(src,/SetAccelerator\(kAccelCompanion, kVKeyC/);
  assert.match(src,/SetAccelerator\(kAccelOrientation, kVKeyE/);
  assert.match(src,/SetAccelerator\(kAccelCloseTab, kVKeyW/);

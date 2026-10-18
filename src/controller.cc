@@ -41,6 +41,7 @@
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_request_context.h"
+#include "include/cef_menu_model.h"
 #include "include/cef_task.h"
 #include "include/views/cef_fill_layout.h"
 #include "include/internal/cef_types_wrappers.h"
@@ -67,6 +68,13 @@ constexpr int kSidebarToggleButton = 32;
 constexpr int kSidebarNewTabButton = 33;
 constexpr int kSidebarOrientationButton = 34;
 constexpr int kSidebarCompanionButton = 35;
+constexpr int kChromeMoreButton = 36;
+constexpr int kMenuTheme = 4101;
+constexpr int kMenuOrientation = 4102;
+constexpr int kMenuMoveLeft = 4103;
+constexpr int kMenuMoveRight = 4104;
+constexpr int kMenuCommander = 4105;
+constexpr int kMenuHome = 4106;
 // Sidebar and header share coordinated light/dark color roles.
 constexpr int kSidebarMinWindowWidth = 550;
 constexpr int kCompanionRowBase = 300;
@@ -147,7 +155,7 @@ const rc_ui::SidebarPalette& UiSidebarPalette() {
 }
 cef_color_t NativeHeaderColor() {
   return g_native_colors_preview
-      ? (g_ui_theme == rc_ui::ThemeMode::Light ? 0xFFEFF4FAu : 0xFF15243Bu)
+      ? (g_ui_theme == rc_ui::ThemeMode::Light ? 0xFFF1F5FAu : 0xFF182638u)
       : UiPalette().header;
 }
 
@@ -515,6 +523,7 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
     if (id == kNewTabButton)
       return CefSize(owner_ && owner_->compact_toolbar_cached_ ? 40 : 116, 36);
     if (id == kTabSwitcherButton) return CefSize(60, 36);
+    if (id == kChromeMoreButton) return CefSize(44, 36);
     if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
       return CefSize(34, 36);
     if (id == kCompanionRefreshButton) return CefSize(kCompanionWidth - 24, 36);
@@ -531,6 +540,21 @@ class AppController::ButtonDelegateImpl : public CefButtonDelegate {
  private:
   AppController* owner_;
   IMPLEMENT_REFCOUNTING(ButtonDelegateImpl);
+};
+
+// Menu command execution is kept on the CEF UI thread; no document scripts.
+// The delegate is detached when the native window is destroyed.
+class AppController::ChromeMenuDelegate : public CefMenuModelDelegate {
+ public:
+  explicit ChromeMenuDelegate(AppController* owner) : owner_(owner) {}
+  void ExecuteCommand(CefRefPtr<CefMenuModel> model, int command_id,
+                      cef_event_flags_t flags) override {
+    if (owner_) owner_->OnPolishMenuCommand(command_id);
+  }
+  void Detach() { owner_ = nullptr; }
+ private:
+  AppController* owner_;
+  IMPLEMENT_REFCOUNTING(ChromeMenuDelegate);
 };
 
 class AppController::BrowserViewDelegateImpl : public CefBrowserViewDelegate {
@@ -695,6 +719,19 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   if (active_index >= 0 && active_index < static_cast<int>(tabs_.size()))
     SetActiveTabInternal(tabs_[active_index].id);
 
+  // Disposable CEF/X11 QA only: paint the real native overflow menu without
+  // OS mouse injection or authenticated sessions. Never auto-open for users.
+  if (command_line && command_line->HasSwitch("rc-premium-menu-self-test") &&
+      g_native_colors_preview && !background_test) {
+    CefPostDelayedTask(TID_UI, base::BindOnce([]() {
+      auto* app = AppController::Get();
+      if (app && !app->closing_ && app->chrome_more_button_ &&
+          app->chrome_more_button_->IsValid()) {
+        app->ShowChromeMenu(app->chrome_more_button_);
+        LOG(WARNING) << "CGWA_PREMIUM_MENU_SELFTEST SHOWN";
+      }
+    }), 850);
+  }
   if (command_line && command_line->HasSwitch("companion-self-test"))
     RunCompanionSelfTest();
   if (command_line && command_line->HasSwitch("vertical-tabs-self-test"))
@@ -920,7 +957,8 @@ void AppController::BuildWindowUI() {
   horizontal.horizontal = true;
   // Controls within the same native title bar should meet edge-to-edge.
   horizontal.between_child_spacing = 0;
-  horizontal.inside_border_horizontal_spacing = 10;
+  horizontal.inside_border_horizontal_spacing =
+      g_native_colors_preview ? 14 : 10;
   horizontal.inside_border_vertical_spacing = 4;
   horizontal.cross_axis_alignment = CEF_AXIS_ALIGNMENT_CENTER;
   horizontal.default_flex = 0;
@@ -1128,6 +1166,16 @@ void AppController::BuildHeaderControls() {
   header_buttons_.push_back(theme);
   header_->AddChildView(theme);
 
+  // Native OS popup rather than permanently showing secondary actions.
+  auto more = make_button(kChromeMoreButton, "⋯", NativeHeaderColor());
+  more->SetFontList(kUIBoldFont);
+  more->SetTooltipText("Browser actions: appearance, tab layout and order");
+  more->SetAccessibleName("More browser actions");
+  chrome_more_button_ = more;
+  header_buttons_.push_back(more);
+  header_->AddChildView(more);
+  more->SetVisible(g_native_colors_preview);
+
   // The trailing flexible region anchors window controls to the *right edge*
   // in both orientations. The hidden horizontal strip must not leave them
   // floating in the middle of the window.
@@ -1142,7 +1190,7 @@ void AppController::BuildHeaderControls() {
   window_controls_->SetBackgroundColor(NativeHeaderColor());
   CefBoxLayoutSettings controls;
   controls.horizontal = true;
-  controls.between_child_spacing = 0;
+  controls.between_child_spacing = g_native_colors_preview ? 2 : 0;
   controls.cross_axis_alignment = CEF_AXIS_ALIGNMENT_CENTER;
   window_controls_->SetToBoxLayout(controls);
   header_->AddChildView(window_controls_);
@@ -2306,14 +2354,79 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
       }
     }
   }
+  if (g_native_colors_preview && id >= kTabButtonBase && id < kTabCloseBase) {
+    if (auto label = button->AsLabelButton()) {
+      const int tab_id = id - kTabButtonBase;
+      auto badge = RoundedTabBadge(tab_id, tab_id == active_tab_id_, hot);
+      auto current = label->GetImage(CEF_BUTTON_STATE_NORMAL);
+      if (badge && (!current || !current->IsSame(badge)))
+        label->SetImage(CEF_BUTTON_STATE_NORMAL, badge);
+    }
+  }
+  if (id == kChromeMoreButton && g_native_colors_preview) {
+    // A discrete, low-saturation capsule avoids another permanent loud icon.
+    bg = hot ? (g_ui_theme == rc_ui::ThemeMode::Dark ? 0xFF34465Fu : 0xFFDDE9F5u)
+             : NativeHeaderColor();
+    fg = UiPalette().text;
+  }
   button->SetBackgroundColor(bg);
   if (auto label = button->AsLabelButton())
     label->SetEnabledTextColors(fg);
 }
 
+void AppController::ShowChromeMenu(CefRefPtr<CefButton> anchor) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!g_native_colors_preview || closing_ || !window_ ||
+      window_->IsClosed() || !anchor || !anchor->IsValid()) return;
+  if (!chrome_menu_delegate_) chrome_menu_delegate_ = new ChromeMenuDelegate(this);
+  auto model = CefMenuModel::CreateMenuModel(chrome_menu_delegate_);
+  if (!model) return;
+  model->AddItem(kMenuTheme, g_ui_theme == rc_ui::ThemeMode::Dark
+      ? "Light appearance" : "Dark appearance");
+  model->AddItem(kMenuOrientation, VerticalTabsVisible()
+      ? "Horizontal tab layout" : "Vertical tab layout");
+  model->AddSeparator();
+  if (tabs_.size() > 1) {
+    model->AddItem(kMenuMoveLeft, "Move active tab left");
+    model->AddItem(kMenuMoveRight, "Move active tab right");
+    model->AddSeparator();
+  }
+  model->AddItem(kMenuCommander, "Toggle Commander panel");
+  const auto command_line = CefCommandLine::GetGlobalCommandLine();
+  if (command_line && command_line->HasSwitch("rc-home-preview") &&
+      rc_home::IsReady()) model->AddItem(kMenuHome, "Open RC Home in new tab");
+  const CefRect rect = anchor->GetBoundsInScreen();
+  // Use the owning window rather than a second BrowserView or web overlay.
+  window_->ShowMenu(model, CefPoint(rect.x + rect.width, rect.y + rect.height),
+                    CEF_MENU_ANCHOR_TOPRIGHT);
+}
+
+void AppController::OnPolishMenuCommand(int command_id) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!g_native_colors_preview || closing_ || !window_ || window_->IsClosed()) return;
+  switch (command_id) {
+    case kMenuTheme: ToggleTheme(); break;
+    case kMenuOrientation: ToggleTabsOrientation(); break;
+    case kMenuMoveLeft: MoveActiveTab(-1); break;
+    case kMenuMoveRight: MoveActiveTab(1); break;
+    case kMenuCommander: ToggleCompanionPanel(); break;
+    case kMenuHome: {
+      const auto cmd = CefCommandLine::GetGlobalCommandLine();
+      if (cmd && cmd->HasSwitch("rc-home-preview") && rc_home::IsReady())
+        NewTab(rc_home::kUrl);
+      break;
+    }
+    default: break;
+  }
+}
+
 void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
   CEF_REQUIRE_UI_THREAD();
   const int id = button->GetID();
+  if (id == kChromeMoreButton && g_native_colors_preview) {
+    ShowChromeMenu(button);
+    return;
+  }
   if (id == kBrandButton) {
     // Owner-invoked opt-in only. Never replace the current ChatGPT context.
     const auto command_line = CefCommandLine::GetGlobalCommandLine();
@@ -2405,14 +2518,15 @@ CefRefPtr<CefImage> AppController::NativeControlIcon(int id, bool hot) {
   return saved;
 }
 
-CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
+CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active,
+                                                 bool hovered) {
   CEF_REQUIRE_UI_THREAD();
   const auto found = std::find_if(tabs_.begin(), tabs_.end(),
       [tab_id](const Tab& tab) { return tab.id == tab_id; });
   const int ordinal = found == tabs_.end() ? 1 :
       std::clamp(static_cast<int>(std::distance(tabs_.begin(), found)) + 1, 1, 8);
   const int theme_slot = g_ui_theme == rc_ui::ThemeMode::Dark ? 1 : 0;
-  const int mode = active ? 1 : 0;
+  const int mode = active ? 1 : (g_native_colors_preview && hovered ? 2 : 0);
   const int hue = ((tab_id - 1) % 8 + 8) % 8;
   auto& stored = tab_badges_[theme_slot][g_native_colors_preview ? 1 : 0]
                             [mode][hue][ordinal - 1];
@@ -2442,7 +2556,8 @@ CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
     std::vector<unsigned char> pixels(static_cast<size_t>(n*n*4), 0);
     // The active preview badge is a ringed circle rather than a square
     // native selection tile. The ring is separated from the fill by air.
-    const bool outlined = g_native_colors_preview && active;
+    const bool outlined = g_native_colors_preview && (active || hovered);
+    const bool hover_only = hovered && !active;
     const float radius = (outlined ? 10.05f : 11.25f) * scale;
     const float mid = 13.0f * scale;
     const int width = 2 * scale;
@@ -2456,7 +2571,8 @@ CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
         const float body_alpha = std::clamp(radius - distance + 0.5f,
                                             0.0f, 1.0f);
         const float outline_alpha = outlined
-            ? std::clamp(12.55f*scale - distance + 0.5f, 0.0f, 1.0f) *
+            ? std::clamp((hover_only ? 12.1f : 12.55f)*scale - distance + 0.5f,
+                         0.0f, 1.0f) *
               std::clamp(distance - 11.15f*scale + 0.5f, 0.0f, 1.0f)
             : 0.0f;
         const bool is_outline = outline_alpha > body_alpha;
@@ -2522,20 +2638,25 @@ void AppController::RebuildTabStrip() {
       button->SetVisible(!vertical);
     }
     else if (id == kMoveTabLeftButton || id == kMoveTabRightButton)
-      button->SetVisible(!vertical && !compact_toolbar && tabs_.size() > 1);
+      button->SetVisible(!g_native_colors_preview && !vertical &&
+                         !compact_toolbar && tabs_.size() > 1);
     else if (id == kCompanionButton) {
       // Vertical rail owns its own Commander action. On a narrow horizontal
       // window keep the icon reachable without crowding the tab strip.
       button->AsLabelButton()->SetText(compact_toolbar ? "◈" : "◈ Commander");
       button->SetVisible(!vertical);
     }
+    else if (id == kChromeMoreButton)
+      button->SetVisible(g_native_colors_preview);
+    else if (id == kThemeButton)
+      button->SetVisible(!g_native_colors_preview);
     else if (id == kBrandButton) {
       // No brand disappears just because the user makes the window narrow.
       button->AsLabelButton()->SetText(narrow_toolbar ? "◈" : "◈  RC Browser");
       button->SetVisible(true);
     }
     else if (id == kTabsOrientationButton)
-      button->SetVisible(!vertical); // Vertical rail owns the alternate action.
+      button->SetVisible(!g_native_colors_preview && !vertical); // Menu/rail owns it.
     if (g_native_colors_preview && NativeControlSlot(id) >= 0) {
       if (id == kTabsOrientationButton || id == kThemeButton ||
           id == kFullscreenButton || id == kMaximizeButton ||
@@ -2874,6 +2995,9 @@ bool AppController::OpenExternal(const std::string& url) {
 
 void AppController::OnWindowDestroyed() {
   CEF_REQUIRE_UI_THREAD();
+  if (chrome_menu_delegate_) chrome_menu_delegate_->Detach();
+  chrome_menu_delegate_ = nullptr;
+  chrome_more_button_ = nullptr;
   tab_drag_.Cancel();
   LOG(WARNING) << "CGWA_SHUTDOWN WINDOW_DESTROYED";
   tabs_.clear();

@@ -62,7 +62,7 @@ test('orientation is at the LEFT in horizontal and vertical native layouts even 
  assert.match(cc,/sidebar_orientation->SetID\(kSidebarOrientationButton\)/);
  assert.match(cc,/sidebar_->AddChildView\(sidebar_orientation\)/);
  assert.match(cc,/id == kSidebarOrientationButton\) \{ ToggleTabsOrientation\(\); return; \}/);
- assert.match(cc,/button->SetVisible\(!vertical\); \/\/ Vertical rail owns the alternate action/);
+ assert.match(cc,/button->SetVisible\(!g_native_colors_preview && !vertical\); \/\/ Menu\/rail owns it/);
  assert.match(fn('void AppController::ToggleTabsOrientation() {','void AppController::RunVerticalTabsSelfTest() {'),/if \(fullscreen_ && header_\) header_->SetVisible\(!vertical_tabs_\)/);
 });
 
@@ -83,7 +83,7 @@ test('Esc exits fullscreen, F11 stays reversible and close/max controls form one
  assert.match(accel,/ToggleFullscreen\(\);\s*return true;/);
  assert.match(cc,/SetAccelerator\(kAccelExitFullscreen, kVKeyEscape, false, false, false, true\)/);
  assert.match(cc,/SetAccelerator\(kAccelFullscreen, kVKeyF11/);
- assert.match(cc,/controls.between_child_spacing = 0/);
+ assert.match(cc,/controls.between_child_spacing = g_native_colors_preview \? 2 : 0/);
  for(const id of ['full','max','min','close'])
   assert.match(cc,new RegExp('window_controls_->AddChildView\\('+id+'\\)'));
  assert.match(cc,/header_->AddChildView\(window_controls_\)/);
