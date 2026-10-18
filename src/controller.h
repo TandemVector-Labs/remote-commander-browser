@@ -102,6 +102,7 @@ class AppController {
   bool VerticalTabsVisible() const;
   int SidebarWidth() const;
   CefRefPtr<CefImage> RoundedTabBadge(int tab_id, bool active);
+  CefRefPtr<CefImage> NativeControlIcon(int id, bool hot);
   bool SidebarCompactEffective() const;
   void RunVerticalTabsSelfTest();
   void RunFullscreenTabsSelfTest();
@@ -186,7 +187,8 @@ class AppController {
     CefRefPtr<CefLabelButton> close;
   };
   // Native circular badge assets; lazily rasterized once per color-state.
-  std::array<std::array<std::array<CefRefPtr<CefImage>, 8>, 2>, 2> tab_badges_{};
+  std::array<std::array<std::array<std::array<std::array<CefRefPtr<CefImage>, 8>, 8>, 2>, 2>, 2> tab_badges_{};
+  std::array<std::array<std::array<CefRefPtr<CefImage>, 16>, 2>, 2> chrome_badges_{};
   std::vector<RetiredUi> retired_ui_;
   std::vector<Tab> tabs_;
   int next_tab_id_ = 1;

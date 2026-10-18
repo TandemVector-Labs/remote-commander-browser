@@ -74,6 +74,42 @@ constexpr int kCompanionRowCount = 18;
 constexpr int kCompanionWidth = 360;
 constexpr int kTabButtonBase = 1000;
 constexpr int kTabCloseBase = 2000;
+// A fixed semantic accent for each independent native control. Color is
+// additive, not the only signal: the 5x5 glyph and accessible name remain.
+int NativeControlSlot(int id) {
+  switch (id) {
+    case kFullscreenButton: return 0;
+    case kMaximizeButton: return 1;
+    case kMinimizeButton: return 2;
+    case kCloseWindowButton: return 3;
+    case kNewTabButton: return 4;
+    case kTabSwitcherButton: return 5;
+    case kThemeButton: return 6;
+    case kCompanionButton: return 7;
+    case kTabsOrientationButton: return 8;
+    case kSidebarToggleButton: return 9;
+    case kSidebarNewTabButton: return 10;
+    case kSidebarOrientationButton: return 11;
+    case kSidebarCompanionButton: return 12;
+    case kMoveTabLeftButton: return 13;
+    case kMoveTabRightButton: return 14;
+    default: return -1;
+  }
+}
+// RGB circles (not square button fill); stay legible under both color schemes.
+constexpr std::array<std::uint32_t, 15> kChromeAccentLight{{
+  0xFF5B6499u, 0xFF487EA5u, 0xFF667584u, 0xFFB45B68u,
+  0xFF248276u, 0xFF496FBAu, 0xFFA56D32u, 0xFF765DAAu,
+  0xFF487EA5u, 0xFF5E778Du, 0xFF248276u, 0xFF5A72B0u,
+  0xFF765DAAu, 0xFF637F8Du, 0xFF637F8Du
+}};
+constexpr std::array<std::uint32_t, 15> kChromeAccentDark{{
+  0xFF545D93u, 0xFF386F9Au, 0xFF536678u, 0xFF9F4A62u,
+  0xFF207569u, 0xFF4261A4u, 0xFF93602Fu, 0xFF70549Du,
+  0xFF386F9Au, 0xFF536778u, 0xFF207569u, 0xFF4A669Du,
+  0xFF70549Du, 0xFF536778u, 0xFF536778u
+}};
+
 
 constexpr int kHeaderHeight = 52;
 constexpr int kBrandWidth = 108;
@@ -103,9 +139,16 @@ constexpr int kVKeyPageDown = 0x22;
 
 // R98 user-selected private browser theme, updated only on the CEF UI thread.
 rc_ui::ThemeMode g_ui_theme = rc_ui::ThemeMode::Dark;
+// Preview-only local native shell; NEVER affects the normal Browser installation.
+bool g_native_colors_preview = false;
 const rc_ui::ThemePalette& UiPalette() { return rc_ui::Palette(g_ui_theme); }
 const rc_ui::SidebarPalette& UiSidebarPalette() {
   return rc_ui::Sidebar(g_ui_theme);
+}
+cef_color_t NativeHeaderColor() {
+  return g_native_colors_preview
+      ? (g_ui_theme == rc_ui::ThemeMode::Light ? 0xFFEFF4FAu : 0xFF15243Bu)
+      : UiPalette().header;
 }
 
 constexpr char kUIFont[] = "Vazirmatn, Inter, Noto Sans Arabic, DejaVu Sans, 13px";
@@ -435,7 +478,7 @@ class AppController::SidebarSurfaceDelegate : public CefPanelDelegate {
 class AppController::HeaderSurfaceDelegate : public CefPanelDelegate {
  public:
   void OnThemeChanged(CefRefPtr<CefView> view) override {
-    if (view) view->SetBackgroundColor(UiPalette().header);
+    if (view) view->SetBackgroundColor(NativeHeaderColor());
   }
   IMPLEMENT_REFCOUNTING(HeaderSurfaceDelegate);
 };
@@ -599,6 +642,8 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   // pre-initialization constructor. Only brand-new opt-in Home profiles use
   // this quiet compact rail; explicit saved choices and normal launches win.
   const auto preview_cmd = CefCommandLine::GetGlobalCommandLine();
+  g_native_colors_preview =
+      preview_cmd && preview_cmd->HasSwitch("rc-colorful-chrome-preview");
   if (preview_cmd && preview_cmd->HasSwitch("rc-home-preview")) {
     std::error_code ec;
     const auto pref = std::filesystem::u8path(SidebarCompactStatePath());
@@ -638,10 +683,12 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   while (in && std::getline(in, line) && urls.size() < 8) {
     if (StartsWith(line, "https://")) urls.push_back(line);
   }
-  // Preview opt-in never discards existing saved ChatGPT URLs. A fresh
-  // disposable profile gets the local Home; ordinary users still get ChatGPT.
+  // ChatGPT is the default even in the optional colorful-shell preview.
+  // The first-party Home is shown only on explicit --rc-home-start or after
+  // clicking the RC Browser brand; saved HTTPS sessions always take priority.
   if (urls.empty())
     urls.push_back(command_line && command_line->HasSwitch("rc-home-preview") &&
+                       command_line->HasSwitch("rc-home-start") &&
                        rc_home::IsReady()
                        ? rc_home::kUrl : "https://chatgpt.com/");
   for (const auto& url : urls) NewTab(url);
@@ -868,7 +915,7 @@ void AppController::BuildWindowUI() {
   window_layout_ = window_->SetToBoxLayout(vertical);
 
   header_ = CefPanel::CreatePanel(header_delegate_);
-  header_->SetBackgroundColor(UiPalette().header);
+  header_->SetBackgroundColor(NativeHeaderColor());
   CefBoxLayoutSettings horizontal;
   horizontal.horizontal = true;
   // Controls within the same native title bar should meet edge-to-edge.
@@ -978,6 +1025,11 @@ void AppController::BuildWindowUI() {
   if (sidebar_overlay_ && sidebar_overlay_->IsValid())
     sidebar_overlay_->SetVisible(false);
   BuildCompanionPanel();
+  if (g_native_colors_preview) {
+    for (const auto& b : {sidebar_toggle_button_,sidebar_new_tab_button_,
+                          sidebar_orientation_button_,sidebar_companion_button_})
+      if (b) OnButtonStateChanged(b);
+  }
 
   UpdateDraggableRegions();
 
@@ -1080,14 +1132,14 @@ void AppController::BuildHeaderControls() {
   // in both orientations. The hidden horizontal strip must not leave them
   // floating in the middle of the window.
   header_spacer_ = CefPanel::CreatePanel(header_surface_delegate_);
-  header_spacer_->SetBackgroundColor(UiPalette().header);
+  header_spacer_->SetBackgroundColor(NativeHeaderColor());
   header_->AddChildView(header_spacer_);
   header_layout_->SetFlexForView(header_spacer_, 1);
 
   // Group the OS controls with zero gap; no stray separator between the
   // fullscreen, maximize, minimize and close surfaces.
   window_controls_ = CefPanel::CreatePanel(header_surface_delegate_);
-  window_controls_->SetBackgroundColor(UiPalette().header);
+  window_controls_->SetBackgroundColor(NativeHeaderColor());
   CefBoxLayoutSettings controls;
   controls.horizontal = true;
   controls.between_child_spacing = 0;
@@ -1119,6 +1171,19 @@ void AppController::BuildHeaderControls() {
   close->SetAccessibleName("Close application");
   header_buttons_.push_back(close);
   window_controls_->AddChildView(close);
+  if (g_native_colors_preview) {
+    // Symbols live inside the actual circular CefImages; no square text
+    // buttons remain in the native window-management strip.
+    for (const auto& b : header_buttons_) {
+      if (!b || NativeControlSlot(b->GetID()) < 0) continue;
+      if (b->GetID() == kFullscreenButton || b->GetID() == kMaximizeButton ||
+          b->GetID() == kMinimizeButton || b->GetID() == kCloseWindowButton ||
+          b->GetID() == kThemeButton || b->GetID() == kTabsOrientationButton ||
+          b->GetID() == kMoveTabLeftButton || b->GetID() == kMoveTabRightButton)
+        b->SetText("");
+      OnButtonStateChanged(b);
+    }
+  }
 }
 
 
@@ -1850,15 +1915,15 @@ void AppController::ApplyNativeTheme() {
   CEF_REQUIRE_UI_THREAD();
   if (!window_ || window_->IsClosed()) return;
   window_->SetBackgroundColor(UiPalette().header);
-  if (header_) header_->SetBackgroundColor(UiPalette().header);
+  if (header_) header_->SetBackgroundColor(NativeHeaderColor());
   if (tab_strip_) tab_strip_->SetBackgroundColor(UiPalette().header);
   if (vertical_tab_strip_)
     vertical_tab_strip_->SetBackgroundColor(UiSidebarPalette().background);
   if (sidebar_) sidebar_->SetBackgroundColor(UiSidebarPalette().background);
   if (sidebar_fill_)
     sidebar_fill_->SetBackgroundColor(UiSidebarPalette().background);
-  if (header_spacer_) header_spacer_->SetBackgroundColor(UiPalette().header);
-  if (window_controls_) window_controls_->SetBackgroundColor(UiPalette().header);
+  if (header_spacer_) header_spacer_->SetBackgroundColor(NativeHeaderColor());
+  if (window_controls_) window_controls_->SetBackgroundColor(NativeHeaderColor());
   if (companion_fill_) companion_fill_->SetBackgroundColor(UiPalette().header);
   if (sidebar_orientation_button_) {
     sidebar_orientation_button_->SetBackgroundColor(UiSidebarPalette().background);
@@ -1880,7 +1945,7 @@ void AppController::ApplyNativeTheme() {
   if (companion_panel_) companion_panel_->SetBackgroundColor(UiPalette().header);
   if (theme_button_) {
     const bool dark = g_ui_theme == rc_ui::ThemeMode::Dark;
-    theme_button_->SetText(dark ? "☾" : "☼");
+    theme_button_->SetText(g_native_colors_preview ? "" : (dark ? "☾" : "☼"));
     theme_button_->SetTooltipText(
         dark ? "Dark appearance. Click to switch to Light."
              : "Light appearance. Click to switch to Dark.");
@@ -1890,6 +1955,11 @@ void AppController::ApplyNativeTheme() {
   }
   for (const auto& button : header_buttons_)
     if (button) OnButtonStateChanged(button);
+  if (g_native_colors_preview) {
+    for (const auto& button : {sidebar_toggle_button_,sidebar_new_tab_button_,
+                               sidebar_orientation_button_,sidebar_companion_button_})
+      if (button) OnButtonStateChanged(button);
+  }
   for (const auto& row : companion_rows_) {
     if (row) {
       row->SetBackgroundColor(UiPalette().header);
@@ -2205,6 +2275,32 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
     bg = active ? UiSidebarPalette().active : (hot ? UiSidebarPalette().hover : UiSidebarPalette().tab);
     fg = active ? UiSidebarPalette().text : UiSidebarPalette().muted;
   }
+  if (g_native_colors_preview) {
+    if (id >= kTabButtonBase) {
+      const int tab_id = id >= kTabCloseBase ? id - kTabCloseBase
+                                             : id - kTabButtonBase;
+      const auto& swatch = rc_ui::TabIdentityHue(g_ui_theme, tab_id);
+      bg = (id >= kTabCloseBase && hot) ? UiPalette().dangerHover :
+          (tab_id == active_tab_id_ ? swatch.active :
+           (hot ? swatch.hover : swatch.idle));
+      fg = (id >= kTabCloseBase && hot)
+          ? UiPalette().dangerText : UiPalette().text;
+    } else if (NativeControlSlot(id) >= 0) {
+      // The circular icon paints its own identity color. The host view stays
+      // neutral to avoid the default square native View background.
+      bg = (id >= kSidebarToggleButton && id <= kSidebarCompanionButton)
+          ? UiSidebarPalette().background : NativeHeaderColor();
+      fg = UiPalette().text;
+      if (auto label = button->AsLabelButton()) {
+        auto pict = NativeControlIcon(id, hot);
+        if (pict) {
+          auto old = label->GetImage(CEF_BUTTON_STATE_NORMAL);
+          if (!old || !old->IsSame(pict))
+            label->SetImage(CEF_BUTTON_STATE_NORMAL, pict);
+        }
+      }
+    }
+  }
   button->SetBackgroundColor(bg);
   if (auto label = button->AsLabelButton())
     label->SetEnabledTextColors(fg);
@@ -2241,6 +2337,69 @@ void AppController::OnButtonPressed(CefRefPtr<CefButton> button) {
   if (id >= kTabButtonBase) { ActivateTab(id - kTabButtonBase); return; }
 }
 
+CefRefPtr<CefImage> AppController::NativeControlIcon(int id, bool hot) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!g_native_colors_preview) return nullptr;
+  const int slot = NativeControlSlot(id);
+  if (slot < 0 || slot >= 15) return nullptr;
+  const int theme = g_ui_theme == rc_ui::ThemeMode::Dark ? 1 : 0;
+  auto& saved = chrome_badges_[theme][hot ? 1 : 0][slot];
+  if (saved) return saved;
+  static constexpr std::uint8_t symbols[15][5] = {
+    {27,17,0,17,27}, // fullscreen corners
+    {31,17,17,17,31},// maximize
+    {0,0,31,0,0},    // minimize
+    {17,10,4,10,17},// close
+    {4,4,31,4,4},   // new tab
+    {0,21,0,21,0},  // tab switcher
+    {4,14,31,14,4}, // theme
+    {4,10,17,10,4}, // Commander
+    {31,0,31,0,31}, // orientation
+    {31,0,31,0,31}, // rail toggle
+    {4,4,31,4,4},   // rail new tab
+    {31,0,31,0,31}, // rail orientation
+    {4,10,17,10,4}, // rail Commander
+    {4,8,31,8,4},   // move left
+    {4,2,31,2,4}    // move right
+  };
+  const std::uint32_t circle = theme
+      ? kChromeAccentDark[slot] : kChromeAccentLight[slot];
+  const auto component = [](std::uint32_t c, int shift) {
+    return static_cast<unsigned char>((c >> shift) & 0xFFu);
+  };
+  auto picture = CefImage::CreateImage();
+  if (!picture) return nullptr;
+  for (int scale : {1, 2}) {
+    const int size = 26 * scale;
+    std::vector<unsigned char> pixels(static_cast<size_t>(size*size*4), 0);
+    const float center = 13.0f * scale;
+    const float radius = (hot ? 12.4f : 11.9f) * scale;
+    for (int y=0;y<size;++y) for (int x=0;x<size;++x) {
+      const float dx = x + .5f - center;
+      const float dy = y + .5f - center;
+      const float alpha = std::clamp(radius - std::sqrt(dx*dx+dy*dy)
+                                     + .5f, 0.0f, 1.0f);
+      if (alpha <= 0) continue;
+      const int px = (x - 8*scale) / (2*scale);
+      const int py = (y - 8*scale) / (2*scale);
+      const bool mark = x >= 8*scale && y >= 8*scale &&
+          px >= 0 && px < 5 && py >= 0 && py < 5 &&
+          (symbols[slot][py] & (1 << (4-px))) != 0;
+      const std::uint32_t c = mark ? 0xFFFFFFFFu : circle;
+      const size_t off = static_cast<size_t>((y*size+x)*4);
+      pixels[off]   = component(c,16);
+      pixels[off+1] = component(c,8);
+      pixels[off+2] = component(c,0);
+      pixels[off+3] = static_cast<unsigned char>(alpha*255.0f);
+    }
+    if (!picture->AddBitmap(static_cast<float>(scale),size,size,
+         CEF_COLOR_TYPE_RGBA_8888,CEF_ALPHA_TYPE_POSTMULTIPLIED,
+         pixels.data(),pixels.size())) return nullptr;
+  }
+  saved = picture;
+  return saved;
+}
+
 CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
   CEF_REQUIRE_UI_THREAD();
   const auto found = std::find_if(tabs_.begin(), tabs_.end(),
@@ -2249,7 +2408,9 @@ CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
       std::clamp(static_cast<int>(std::distance(tabs_.begin(), found)) + 1, 1, 8);
   const int theme_slot = g_ui_theme == rc_ui::ThemeMode::Dark ? 1 : 0;
   const int mode = active ? 1 : 0;
-  auto& stored = tab_badges_[theme_slot][mode][ordinal - 1];
+  const int hue = ((tab_id - 1) % 8 + 8) % 8;
+  auto& stored = tab_badges_[theme_slot][g_native_colors_preview ? 1 : 0]
+                            [mode][hue][ordinal - 1];
   if (stored) return stored;
 
   // Hand-drawn circular native badge, not an additional browser renderer.
@@ -2259,11 +2420,13 @@ CefRefPtr<CefImage> AppController::RoundedTabBadge(int tab_id, bool active) {
       {7, 1, 7, 1, 7}, {5, 5, 7, 1, 1},
       {7, 4, 7, 1, 7}, {7, 4, 7, 5, 7},
       {7, 1, 1, 1, 1}, {7, 5, 7, 5, 7}};
-  const cef_color_t base = active ? UiPalette().primary :
-                                      UiSidebarPalette().active;
+  const cef_color_t base = g_native_colors_preview
+      ? rc_ui::TabIdentityHue(g_ui_theme, tab_id).badge
+      : (active ? UiPalette().primary : UiSidebarPalette().active);
   // Dark CTA is light blue; white-on-light-blue is unreadable. Use the
   // theme's deliberately contrasting content color for the active badge.
-  const cef_color_t fg = active ? UiPalette().content : UiSidebarPalette().text;
+  const cef_color_t fg = g_native_colors_preview ? UiPalette().content
+                            : (active ? UiPalette().content : UiSidebarPalette().text);
   auto channel = [](cef_color_t color, int bits) {
     return static_cast<unsigned char>((color >> bits) & 0xFFu);
   };
@@ -2353,6 +2516,13 @@ void AppController::RebuildTabStrip() {
     }
     else if (id == kTabsOrientationButton)
       button->SetVisible(!vertical); // Vertical rail owns the alternate action.
+    if (g_native_colors_preview && NativeControlSlot(id) >= 0) {
+      if (id == kTabsOrientationButton || id == kThemeButton ||
+          id == kFullscreenButton || id == kMaximizeButton ||
+          id == kMinimizeButton || id == kCloseWindowButton ||
+          id == kMoveTabLeftButton || id == kMoveTabRightButton)
+        button->AsLabelButton()->SetText("");
+    }
     // Keyboard accelerators remain available in compact and narrow widths.
     // Theme and OS window-management controls are always visible.
   }
@@ -2368,6 +2538,20 @@ void AppController::RebuildTabStrip() {
     sidebar_orientation_button_->SetText(compact ? "↔" : "↔  Horizontal tabs");
   if (sidebar_companion_button_)
     sidebar_companion_button_->SetText(compact ? "◈" : "◈  Commander");
+  if (g_native_colors_preview) {
+    // In compact mode the 26px colored circle is the entire target icon.
+    // A second Unicode glyph alongside it would crowd the 34px rail.
+    if (compact) {
+      for (const auto& b : {sidebar_toggle_button_,sidebar_new_tab_button_,
+                            sidebar_orientation_button_,sidebar_companion_button_})
+        if (b) b->SetText("");
+    } else {
+      if (sidebar_toggle_button_) sidebar_toggle_button_->SetText("Workspace tabs");
+      if (sidebar_new_tab_button_) sidebar_new_tab_button_->SetText("New tab");
+      if (sidebar_orientation_button_) sidebar_orientation_button_->SetText("Horizontal tabs");
+      if (sidebar_companion_button_) sidebar_companion_button_->SetText("Commander");
+    }
+  }
   // Align words like navigation entries, while keeping compact icons centered.
   const auto rail_alignment = compact
       ? CEF_HORIZONTAL_ALIGNMENT_CENTER : CEF_HORIZONTAL_ALIGNMENT_LEFT;
@@ -2457,6 +2641,10 @@ void AppController::RebuildTabStrip() {
     tab.ui_panel = item;
     tab.title_button = title;
     tab.close_button = close;
+    if (g_native_colors_preview) {
+      OnButtonStateChanged(title);
+      OnButtonStateChanged(close);
+    }
     if (vertical)
       vertical_tab_strip_->AddChildView(item);
     else
@@ -2518,6 +2706,10 @@ void AppController::UpdateTabButton(Tab& tab) {
         ? (active ? UiSidebarPalette().active : UiSidebarPalette().tab)
         : (active ? UiPalette().tabActive : UiPalette().tab));
     tab.close_button->SetEnabledTextColors(vertical ? UiSidebarPalette().muted : UiPalette().muted);
+  }
+  if (g_native_colors_preview) {
+    OnButtonStateChanged(tab.title_button);
+    if (tab.close_button) OnButtonStateChanged(tab.close_button);
   }
 }
 
@@ -2691,8 +2883,13 @@ void AppController::OnWindowDestroyed() {
   // CefImage wrappers must be released while CEF's UI thread is still active.
   // Otherwise the BrowserApp owner may destruct after CefShutdown().
   for (auto& theme : tab_badges_)
-    for (auto& mode : theme)
-      std::fill(mode.begin(), mode.end(), CefRefPtr<CefImage>{});
+    for (auto& preview : theme)
+      for (auto& mode : preview)
+        for (auto& hue : mode)
+          std::fill(hue.begin(), hue.end(), CefRefPtr<CefImage>{});
+  for (auto& theme : chrome_badges_)
+    for (auto& state : theme)
+      std::fill(state.begin(), state.end(), CefRefPtr<CefImage>{});
   retired_ui_.clear();
   window_created_ = false;
   CefQuitMessageLoop();
