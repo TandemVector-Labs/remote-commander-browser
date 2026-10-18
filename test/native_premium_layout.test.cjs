@@ -46,3 +46,15 @@ test("real native menu snapshot is gated behind opt-in preview and QA-only flag"
  assert.match(s,/app->ShowChromeMenu\(app->chrome_more_button_\)/);
  assert.match(s,/CGWA_PREMIUM_MENU_SELFTEST SHOWN/);
 });
+
+test("user screenshot: no rectangular native color tiles or redundant control labels in horizontal preview",()=>{
+ assert.match(s,/const bool seamless_horizontal = !VerticalTabsVisible\(\)/);
+ assert.match(s,/bg = seamless_horizontal \? NativeHeaderColor\(\)/);
+ assert.match(s,/visible.visible < static_cast<int>\(tabs_\.size\(\)\)/);
+ assert.match(s,/id == kNewTabButton\)\s*button->AsLabelButton\(\)->SetText\(compact_toolbar \? "" : "New tab"\)/);
+ assert.match(s,/id == kCompanionButton\)\s*button->AsLabelButton\(\)->SetText\(compact_toolbar \? "" : "Commander"\)/);
+ assert.match(s,/if \(g_native_colors_preview && !vertical && tab_switcher_button_\)/);
+ assert.match(s,/SetAccelerator\(kAccelNextTab,/);
+ assert.match(s,/SetAccelerator\(kAccelPrevTab,/);
+ assert.match(s,/SetAccessibleName\("Switch tabs"\)/);
+});

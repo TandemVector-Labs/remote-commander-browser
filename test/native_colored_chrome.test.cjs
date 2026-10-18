@@ -59,7 +59,9 @@ test('normal Chrome and existing sessions remain unchanged unless preview is exp
 
 test('compact colored rail has genuinely circular selected tab with visible focus ring',()=>{
  assert.match(code,/const bool compact_rail = VerticalTabsVisible\(\) && SidebarCompactEffective\(\)/);
- assert.match(code,/bg = compact_rail \? UiSidebarPalette\(\)\.background/);
+ assert.match(code,/const bool seamless_horizontal = !VerticalTabsVisible\(\)/);
+ assert.match(code,/bg = seamless_horizontal \? NativeHeaderColor\(\)/);
+ assert.match(code,/compact_rail \? UiSidebarPalette\(\)\.background/);
  assert.match(code,/const bool outlined = g_native_colors_preview && \(active \|\| hovered\)/);
  assert.match(code,/const float outline_alpha = outlined/);
  assert.match(code,/std::max\(body_alpha, outline_alpha\)/);
