@@ -2332,10 +2332,16 @@ void AppController::OnButtonStateChanged(CefRefPtr<CefButton> button) {
       // rail the circular badge itself conveys hue and selection; painting a
       // rectangular active/hover swatch around it defeats that geometry.
       const bool compact_rail = VerticalTabsVisible() && SidebarCompactEffective();
-      bg = compact_rail ? UiSidebarPalette().background :
-          ((id >= kTabCloseBase && hot) ? UiPalette().dangerHover :
-           (tab_id == active_tab_id_ ? swatch.active :
-            (hot ? swatch.hover : swatch.idle)));
+      // Native CefLabelButton color fills have rectangular edges. Keep the
+      // native horizontal tab surface neutral and let the circular hue badge,
+      // selection ring, weight and tooltip convey each tab's identity. The
+      // 2nd (ChatGPT-owned) sidebar remains page-owned; never inject CSS.
+      const bool seamless_horizontal = !VerticalTabsVisible();
+      bg = seamless_horizontal ? NativeHeaderColor() :
+          (compact_rail ? UiSidebarPalette().background :
+           ((id >= kTabCloseBase && hot) ? UiPalette().dangerHover :
+            (tab_id == active_tab_id_ ? swatch.active :
+             (hot ? swatch.hover : swatch.idle))));
       fg = (id >= kTabCloseBase && hot)
           ? UiPalette().dangerText : UiPalette().text;
     } else if (NativeControlSlot(id) >= 0) {
@@ -2666,6 +2672,12 @@ void AppController::RebuildTabStrip() {
     else if (id == kTabsOrientationButton)
       button->SetVisible(!g_native_colors_preview && !vertical); // Menu/rail owns it.
     if (g_native_colors_preview && NativeControlSlot(id) >= 0) {
+      // The badge already paints + and Commander. Repeating Unicode glyphs
+      // next to the native icon makes the toolbar look duplicated.
+      if (id == kNewTabButton)
+        button->AsLabelButton()->SetText(compact_toolbar ? "" : "New tab");
+      if (id == kCompanionButton)
+        button->AsLabelButton()->SetText(compact_toolbar ? "" : "Commander");
       if (id == kTabsOrientationButton || id == kThemeButton ||
           id == kFullscreenButton || id == kMaximizeButton ||
           id == kMinimizeButton || id == kCloseWindowButton ||
@@ -2724,6 +2736,11 @@ void AppController::RebuildTabStrip() {
       : rc_ui::SelectTabs(logical_width,
                           static_cast<int>(tabs_.size()), active_index);
   visible_tab_capacity_ = visible.capacity;
+  // A redundant switcher doubles the same control when all tabs are already
+  // directly clickable. Only show overflow navigation when tabs are clipped.
+  if (g_native_colors_preview && !vertical && tab_switcher_button_)
+    tab_switcher_button_->SetVisible(
+        visible.visible < static_cast<int>(tabs_.size()));
   for (size_t i = 0; i < tabs_.size(); ++i) {
     auto& tab = tabs_[i];
     const bool in_strip = static_cast<int>(i) >= visible.first &&
