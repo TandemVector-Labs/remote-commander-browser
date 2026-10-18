@@ -57,6 +57,20 @@ test('Home remains outside page-script / RTL injection and permission trust',()=
  assert.match(client,/origin == "https:\/\/chatgpt\.com"/);
  assert.doesNotMatch(client,/origin == "rc-home:\/\/app"/);
 });
+test('rounded glass surfaces are usable, opt-in and not a fake ChatGPT composer',()=>{
+ assert.match(page,/--glass:rgba\(255,255,255,\.67\)/);
+ assert.match(page,/backdrop-filter:blur\(20px\)/);
+ assert.match(page,/\.top \{[\s\S]*?border-radius:999px/);
+ assert.match(page,/\.primary \{[\s\S]*?border-radius:999px/);
+ assert.match(page,/\.card \{[\s\S]*?border-radius:29px/);
+ assert.match(page,/\.cardicon \{[\s\S]*?border-radius:50%/);
+ assert.match(page,/@media \(max-width:490px\)/);
+ assert.doesNotMatch(page,/<input|<textarea|contenteditable/i);
+ assert.equal((page.match(/href=/g)||[]).length,1);
+ assert.match(controller,/HasSwitch\("rc-home-preview"\)[\s\S]*?sidebar_compact_ = true;/);
+ assert.match(controller,/void AppController::OnWindowCreated[\s\S]*?HasSwitch\("rc-home-preview"\)[\s\S]*?sidebar_compact_ = true;[\s\S]*?BuildWindowUI\(\);/);
+ assert.match(controller,/std::filesystem::symlink_status\(pref, ec\)/);
+});
 test('child and browser processes register identical scheme options',()=>{
  assert.match(app,/BrowserApp::OnRegisterCustomSchemes/);
  assert.match(app,/rc_home::RegisterScheme\(registrar\)/);

@@ -595,6 +595,18 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   window_->SetTitle("ChatGPT Commander");
   ApplyChromeColorScheme();
   SetX11WindowClass(window_);
+  // CefCommandLine is available at window creation, not in AppController's
+  // pre-initialization constructor. Only brand-new opt-in Home profiles use
+  // this quiet compact rail; explicit saved choices and normal launches win.
+  const auto preview_cmd = CefCommandLine::GetGlobalCommandLine();
+  if (preview_cmd && preview_cmd->HasSwitch("rc-home-preview")) {
+    std::error_code ec;
+    const auto pref = std::filesystem::u8path(SidebarCompactStatePath());
+    const auto status = std::filesystem::symlink_status(pref, ec);
+    if (ec == std::errc::no_such_file_or_directory ||
+        (!ec && !std::filesystem::exists(status)))
+      sidebar_compact_ = true;
+  }
   BuildWindowUI();
   window_->CenterWindow(CefSize(1240, 760));
   // Explicit local QA viewport. Never change a normal or opted-in user's
