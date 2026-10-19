@@ -58,3 +58,13 @@ test("user screenshot: no rectangular native color tiles or redundant control la
  assert.match(s,/SetAccelerator\(kAccelPrevTab,/);
  assert.match(s,/SetAccessibleName\("Switch tabs"\)/);
 });
+
+test("dark horizontal tab gaps keep themed parent panel, including layout orientation changes",()=>{
+ assert.match(s,/class AppController::TabItemSurfaceDelegate : public CefPanelDelegate/);
+ assert.match(s,/const bool vertical = owner && owner->VerticalTabsVisible\(\)/);
+ assert.match(s,/view->SetBackgroundColor\(vertical \? UiSidebarPalette\(\)\.background/);
+ assert.match(s,/auto item = CefPanel::CreatePanel\(g_native_colors_preview/);
+ assert.match(s,/\? tab_item_surface_delegate_ : nullptr\)/);
+ assert.match(s,/tab.ui_panel->SetBackgroundColor\(vertical/);
+ assert.match(s,/settings.between_child_spacing = vertical \? 5 : 3/);
+});
