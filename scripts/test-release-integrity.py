@@ -331,6 +331,68 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertIn("UNINSTALL_RUNTIME_REPARSE_REFUSED", p.stderr)
         self.assertEqual((outside / "sentinel").read_text(), "DO_NOT_TOUCH")
 
+    @unittest.skipUnless(os.name == "posix", "Linux launcher assignment semantics")
+    def test_uninstall_ambiguous_launcher_preserves_newer_active_version(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        home = self.root / "ambiguous-launcher-home"
+        base = home / ".local/share/chatgpt-cef-v2"
+        old = base / f"runtime-v{version}"
+        newer = base / "runtime-v9.9.9"
+        old.mkdir(parents=True)
+        newer.mkdir()
+        (old / "OLD_SENTINEL").write_text("PRESERVE", encoding="utf-8")
+        (newer / "NEW_SENTINEL").write_text("PRESERVE", encoding="utf-8")
+        launcher = home / ".local/bin/chatgpt-cef-v2"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(
+            "#!/bin/sh\n"
+            f'RUNTIME="{old}"\n'
+            f'RUNTIME="{newer}"\n'
+            'exec "$RUNTIME/chatgpt-cef-v2"\n', encoding="utf-8")
+        desktop = home / ".local/share/applications/chatgpt-cef-v2.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("KEEP_DESKTOP", encoding="utf-8")
+        profile = home / ".config/chatgpt-cef-v2"
+        profile.mkdir(parents=True)
+        (profile / "session").write_text("KEEP_PROFILE", encoding="utf-8")
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts/uninstall-local.sh")],
+            env={**os.environ, "HOME": str(home)},
+            capture_output=True, text=True, timeout=12)
+        self.assertEqual(result.returncode, 48, result.stderr)
+        self.assertIn("UNINSTALL_LAUNCHER_RUNTIME_AMBIGUOUS", result.stderr)
+        self.assertEqual((old / "OLD_SENTINEL").read_text(), "PRESERVE")
+        self.assertEqual((newer / "NEW_SENTINEL").read_text(), "PRESERVE")
+        self.assertTrue(launcher.is_file())
+        self.assertEqual(desktop.read_text(), "KEEP_DESKTOP")
+        self.assertEqual((profile / "session").read_text(), "KEEP_PROFILE")
+
+    @unittest.skipUnless(os.name == "posix", "Linux launcher identity semantics")
+    def test_uninstall_single_old_launcher_removes_only_old_assets(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        home = self.root / "single-old-launcher-home"
+        old = home / ".local/share/chatgpt-cef-v2" / f"runtime-v{version}"
+        old.mkdir(parents=True)
+        launcher = home / ".local/bin/chatgpt-cef-v2"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(
+            f'#!/bin/sh\nRUNTIME="{old}"\n', encoding="utf-8")
+        desktop = home / ".local/share/applications/chatgpt-cef-v2.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("REMOVE_DESKTOP", encoding="utf-8")
+        profile = home / ".config/chatgpt-cef-v2"
+        profile.mkdir(parents=True)
+        (profile / "session").write_text("KEEP_PROFILE", encoding="utf-8")
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts/uninstall-local.sh")],
+            env={**os.environ, "HOME": str(home)},
+            capture_output=True, text=True, timeout=12)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(old.exists())
+        self.assertFalse(launcher.exists())
+        self.assertFalse(desktop.exists())
+        self.assertEqual((profile / "session").read_text(), "KEEP_PROFILE")
+
     @unittest.skipUnless(os.name == "posix", "Linux ancestor-symlink semantics")
     def test_uninstall_rejects_symlinked_runtime_ancestors(self):
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
