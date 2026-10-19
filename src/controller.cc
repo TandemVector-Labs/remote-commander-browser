@@ -491,6 +491,22 @@ class AppController::HeaderSurfaceDelegate : public CefPanelDelegate {
   IMPLEMENT_REFCOUNTING(HeaderSurfaceDelegate);
 };
 
+// A native tab row is a Panel with two LabelButton children separated by
+// three DIPs. CEF theme initialization resets *bare* Panels to OS white,
+// exposing a white 3-DIP bar in the navy horizontal tab strip. Keep the row
+// gap surface bound to the current orientation and theme after reparenting.
+class AppController::TabItemSurfaceDelegate : public CefPanelDelegate {
+ public:
+  void OnThemeChanged(CefRefPtr<CefView> view) override {
+    if (!view) return;
+    const auto* owner = AppController::Get();
+    const bool vertical = owner && owner->VerticalTabsVisible();
+    view->SetBackgroundColor(vertical ? UiSidebarPalette().background
+                                      : NativeHeaderColor());
+  }
+  IMPLEMENT_REFCOUNTING(TabItemSurfaceDelegate);
+};
+
 class AppController::ButtonDelegateImpl : public CefButtonDelegate {
  public:
   explicit ButtonDelegateImpl(AppController* owner) : owner_(owner) {}
@@ -626,6 +642,7 @@ AppController::AppController() {
   browser_view_delegate_ = new BrowserViewDelegateImpl(this);
   header_delegate_ = new FixedPanelDelegate(1240, kHeaderHeight);
   header_surface_delegate_ = new HeaderSurfaceDelegate();
+  tab_item_surface_delegate_ = new TabItemSurfaceDelegate();
   g_ui_theme = ReadThemePreference();
   vertical_tabs_ = ReadVerticalTabsPreference();
   sidebar_compact_ = ReadSidebarCompactPreference();
@@ -2751,6 +2768,10 @@ void AppController::RebuildTabStrip() {
         tab.close_button->IsValid()) {
       tab.close_button->SetVisible(!vertical || !SidebarCompactEffective());
       UpdateTabButton(tab);
+      // The same native Panel can move between strips without recreation.
+      if (g_native_colors_preview)
+        tab.ui_panel->SetBackgroundColor(vertical
+            ? UiSidebarPalette().background : NativeHeaderColor());
       tab.title_button->SetTooltipText(tab.title);
       tab.title_button->SetAccessibleName(
           "Activate tab " + std::to_string(i + 1) + ": " + tab.title);
@@ -2761,7 +2782,8 @@ void AppController::RebuildTabStrip() {
       continue;
     }
     // Create each native control only once, as the tab itself is created.
-    auto item = CefPanel::CreatePanel(nullptr);
+    auto item = CefPanel::CreatePanel(g_native_colors_preview
+        ? tab_item_surface_delegate_ : nullptr);
     CefBoxLayoutSettings settings;
     settings.horizontal = true;
     settings.between_child_spacing = vertical ? 5 : 3;

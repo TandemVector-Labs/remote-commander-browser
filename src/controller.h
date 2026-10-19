@@ -100,6 +100,7 @@ class AppController {
   class FixedPanelDelegate;
   class SidebarSurfaceDelegate;
   class HeaderSurfaceDelegate;
+  class TabItemSurfaceDelegate;
   class ChromeMenuDelegate;
 
   void BuildWindowUI();
@@ -185,6 +186,7 @@ class AppController {
   CefRefPtr<BrowserViewDelegateImpl> browser_view_delegate_;
   CefRefPtr<FixedPanelDelegate> header_delegate_;
   CefRefPtr<HeaderSurfaceDelegate> header_surface_delegate_;
+  CefRefPtr<TabItemSurfaceDelegate> tab_item_surface_delegate_;
 
   CefRefPtr<AppClient> client_;
   struct RetiredUi {
