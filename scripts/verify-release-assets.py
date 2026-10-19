@@ -67,13 +67,31 @@ def verify(version: str, directory: Path) -> dict[str, str]:
         verified[asset] = actual_hash
     return verified
 
+def trusted_cli_release_stage(value: Path) -> Path:
+    # A publishing command accepts only its own fixed dist/release directory.
+    # Pure verify() may still inspect disposable test fixtures.
+    repo_root = Path(__file__).resolve().parent.parent
+    if Path.cwd().resolve() != repo_root or value != Path("dist") / "release":
+        raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
+    stage_parent = repo_root / "dist"
+    candidate = stage_parent / "release"
+    # Windows junctions and POSIX symlinks must not redirect the fixed path.
+    for part in (stage_parent, candidate):
+        if part.is_symlink() or (hasattr(part, "is_junction") and part.is_junction()):
+            raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
+    if (not stage_parent.is_dir() or not candidate.is_dir()
+            or candidate.resolve() != candidate):
+        raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
+    return candidate
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
     parser.add_argument("directory", type=Path)
     args = parser.parse_args()
     try:
-        verified = verify(args.version, args.directory)
+        verified = verify(args.version, trusted_cli_release_stage(args.directory))
     except (IntegrityError, OSError) as exc:
         print(f"RELEASE_PRODUCER_SHA256_FAIL: {exc}", file=sys.stderr)
         return 1
