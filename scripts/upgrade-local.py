@@ -245,7 +245,8 @@ def activate(home, version, binary_hash, sandbox_hash, package, package_hash,
                for name, (path, _, _) in outputs.items()}
         if old["launcher"] is not None:
             launcher_old = outputs["launcher"][0].read_text()
-            require(("runtime-v" + version) not in launcher_old,
+            require(re.search(r"runtime-v" + re.escape(version)
+                              + r"(?![0-9A-Za-z.-])", launcher_old) is None,
                     "refusing same-version activation")
         temp_state = app / (STATE + ".prepare-" + secrets.token_hex(8))
         temp_state.mkdir(mode=0o700)

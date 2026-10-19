@@ -132,6 +132,19 @@ class TransactionTests(unittest.TestCase):
                 upgrade.activate(**self.kwargs())
         self.assert_unmodified()
 
+    def test_distinct_version_with_old_prefix_is_not_same_version(self):
+        for suffix in ("9", ".9", "-next"):
+            with self.subTest(suffix=suffix):
+                self.old_launcher = (
+                    "RUNTIME=/x/runtime-v" + self.VERSION + suffix + "\n"
+                ).encode()
+                self.launcher.write_bytes(self.old_launcher)
+                with self.trusted_fixture():
+                    upgrade.activate(**self.kwargs())
+                    self.assertTrue((self.app / upgrade.STATE).exists())
+                    upgrade.action(self.home, "rollback")
+                self.assert_unmodified()
+
     def test_pending_upgrade_must_be_resolved_before_next_activation(self):
         with self.trusted_fixture():
             upgrade.activate(**self.kwargs())
