@@ -73,8 +73,14 @@ def trusted_cli_release_stage(value: Path) -> Path:
     repo_root = Path(__file__).resolve().parent.parent
     if Path.cwd().resolve() != repo_root or value != Path("dist") / "release":
         raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
-    candidate = repo_root / "dist" / "release"
-    if candidate.is_symlink():
+    stage_parent = repo_root / "dist"
+    candidate = stage_parent / "release"
+    # Windows junctions and POSIX symlinks must not redirect the fixed path.
+    for part in (stage_parent, candidate):
+        if part.is_symlink() or (hasattr(part, "is_junction") and part.is_junction()):
+            raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
+    if (not stage_parent.is_dir() or not candidate.is_dir()
+            or candidate.resolve() != candidate):
         raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
     return candidate
 
