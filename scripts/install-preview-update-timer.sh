@@ -32,7 +32,8 @@ Type=oneshot
 ExecStart=/usr/bin/python3 $BIN --auto
 Environment=PYTHONDONTWRITEBYTECODE=1
 TimeoutStartSec=20min
-NoNewPrivileges=true
+# Chromium's verified root-owned SUID sandbox is used for isolated release QA.
+# NoNewPrivileges=true here would prevent that sandbox helper from working.
 PrivateTmp=true
 SERVICE
 cat > "$TIMER" <<TIMER

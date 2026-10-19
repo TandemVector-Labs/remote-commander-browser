@@ -174,6 +174,13 @@ class GitHubUpdateSafety(unittest.TestCase):
                 first_new_launcher=launcher.read_bytes()
                 old=state
 
+    def test_timer_service_does_not_block_chromium_root_owned_suid_sandbox(self):
+        installer=(Path(__file__).resolve().parents[1]/'scripts/install-preview-update-timer.sh').read_text()
+        self.assertIn('PrivateTmp=true',installer)
+        self.assertNotIn('\nNoNewPrivileges=true\n',installer.split('cat > "$SERVICE" <<SERVICE')[1].split('SERVICE',1)[0])
+        self.assertIn('ExecStart=/usr/bin/python3',installer)
+        self.assertIn('OnUnitActiveSec=12h',installer)
+
     def test_rendered_single_launcher_keeps_gpu_and_sandbox(self):
         path=Path('/home/tester')
         s=u.render_launcher(path,path/'.local/share/chatgpt-cef-v2/runtime-local-preview-github-v0.8.4/chatgpt-cef-v2','a'*64,path/'.local/share/chatgpt-cef-v2/runtime-v0.8.3-rc.2-qa114.3b818244/chrome-sandbox').decode()
