@@ -160,6 +160,39 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
 
+    @unittest.skipUnless(os.name == "nt", "Windows directory junction semantics")
+    def test_cli_rejects_windows_junctioned_stage(self):
+        import sys
+        for name in ("dist", "release"):
+            with self.subTest(junction=name):
+                checkout = self.root / ("junction checkout " + name)
+                (checkout / "scripts").mkdir(parents=True)
+                shutil.copyfile(ROOT / "scripts/verify-release-assets.py",
+                                checkout / "scripts/verify-release-assets.py")
+                external = self.root / ("external junction " + name)
+                external.mkdir()
+                shutil.copytree(self.release, external / "release")
+                if name == "dist":
+                    junction = checkout / "dist"
+                    target = external
+                else:
+                    (checkout / "dist").mkdir()
+                    junction = checkout / "dist/release"
+                    target = external / "release"
+                created = subprocess.run(
+                    ["cmd.exe", "/D", "/C", "mklink", "/J", str(junction), str(target)],
+                    capture_output=True, text=True, timeout=15)
+                self.assertEqual(created.returncode, 0, created.stderr)
+                self.assertTrue(junction.is_junction())
+                # Valid external checksums must not authorize the redirected CLI stage.
+                self.assertEqual(len(MODULE.verify(VERSION, external / "release")), 3)
+                result = subprocess.run(
+                    [sys.executable, str(checkout / "scripts/verify-release-assets.py"),
+                     VERSION, "dist/release"],
+                    cwd=checkout, capture_output=True, text=True, timeout=15)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
+
     @unittest.skipUnless(os.name == "posix", "native POSIX symlink semantics")
     def test_symlink_member_rejected(self):
         member = self.release / self.setup
