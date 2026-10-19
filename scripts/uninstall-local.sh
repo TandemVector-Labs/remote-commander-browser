@@ -51,6 +51,14 @@ if [[ -L "$LAUNCHER" ]]; then
   exit 45
 fi
 if [[ -f "$LAUNCHER" ]]; then
+  # A newer launcher may retain the old RUNTIME assignment before overriding it.
+  # Do not treat grep's any-line match as proof that the old runtime is active.
+  # Match literal assignments even under export or on a shared shell line.
+  # Ambiguous launcher source must never authorize deleting the shared launcher.
+  runtime_assignments=$(awk -F'RUNTIME=' '{n += NF - 1} END {print n+0}' "$LAUNCHER")
+  if (( runtime_assignments > 1 )); then
+    printf 'UNINSTALL_LAUNCHER_RUNTIME_AMBIGUOUS\n' >&2; exit 48
+  fi
   literal_home="RUNTIME=\"\$HOME/.local/share/chatgpt-cef-v2/runtime-v$VERSION\""
   if grep -Fxq "RUNTIME=$RUNTIME" "$LAUNCHER" ||
      grep -Fxq "RUNTIME=\"$RUNTIME\"" "$LAUNCHER" ||

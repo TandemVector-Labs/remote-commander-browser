@@ -90,8 +90,10 @@ def trusted_cli_release_stage(value: Path) -> Path:
     if (
         not dist_root.is_dir()
         or dist_root.is_symlink()
+        or (hasattr(dist_root, "is_junction") and dist_root.is_junction())
         or not candidate.is_dir()
         or candidate.is_symlink()
+        or (hasattr(candidate, "is_junction") and candidate.is_junction())
         or candidate.resolve() != repo_root / "dist" / "release"
     ):
         raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")
