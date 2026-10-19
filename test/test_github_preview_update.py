@@ -176,7 +176,9 @@ class GitHubUpdateSafety(unittest.TestCase):
 
     def test_timer_service_does_not_block_chromium_root_owned_suid_sandbox(self):
         installer=(Path(__file__).resolve().parents[1]/'scripts/install-preview-update-timer.sh').read_text()
-        self.assertIn('PrivateTmp=true',installer)
+        self.assertIn('PrivateTmp=false',installer)
+        self.assertIn('UMask=0077',installer)
+        self.assertNotIn('\nPrivateTmp=true\n',installer)
         self.assertNotIn('\nNoNewPrivileges=true\n',installer.split('cat > "$SERVICE" <<SERVICE')[1].split('SERVICE',1)[0])
         self.assertIn('ExecStart=/usr/bin/python3',installer)
         self.assertIn('OnUnitActiveSec=12h',installer)

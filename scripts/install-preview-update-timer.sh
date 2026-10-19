@@ -34,7 +34,12 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 TimeoutStartSec=20min
 # Chromium's verified root-owned SUID sandbox is used for isolated release QA.
 # NoNewPrivileges=true here would prevent that sandbox helper from working.
-PrivateTmp=true
+# PrivateTmp=true in an unprivileged systemd --user unit maps the real
+# root-owned Chromium SUID helper to 65534:65534. It causes the updater's
+# root:root 4755 integrity guard to reject an intact installed helper.
+# Use the real per-user /tmp namespace; update staging itself remains 0700.
+PrivateTmp=false
+UMask=0077
 SERVICE
 cat > "$TIMER" <<TIMER
 [Unit]
