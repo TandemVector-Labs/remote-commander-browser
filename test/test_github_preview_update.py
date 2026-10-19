@@ -130,7 +130,7 @@ class GitHubUpdateSafety(unittest.TestCase):
                  'runtime':str(runtime/'old')}
             (runtime/'old').mkdir()
             # The test is entirely offline. GitHub and CEF native smoke are mocked.
-            for version in ('0.8.4','0.8.5'):
+            for version in ('0.8.4','0.8.5','0.8.6'):
                 filename=f'remote-commander-browser-v{version}-linux-x86_64.tar.gz'
                 entries=[(n.replace('v0.8.4-','v'+version+'-'),v,k)
                          for n,v,k in self.entries()]
@@ -173,6 +173,40 @@ class GitHubUpdateSafety(unittest.TestCase):
                     self.assertEqual((app/'previous-launcher.before-github-update').read_bytes(),first_new_launcher)
                 first_new_launcher=launcher.read_bytes()
                 old=state
+            # Successful third promotion keeps only the latest and rollback
+            # updater-created generations; the older release is retired.
+            self.assertFalse((runtime/'runtime-local-preview-github-v0.8.4').exists())
+            self.assertTrue((runtime/'runtime-local-preview-github-v0.8.5').exists())
+            self.assertTrue((runtime/'runtime-local-preview-github-v0.8.6').exists())
+
+    def test_runtime_retirement_refuses_unmanaged_or_modified_directories(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            def make_runtime(version, managed=True):
+                p=root/('runtime-local-preview-github-v'+version)
+                p.mkdir()
+                binary=p/'chatgpt-cef-v2'
+                binary.write_bytes(b'fixture-'+version.encode())
+                if managed:
+                    (p/'.rc-github-managed-runtime').write_text(
+                        p.name+'\n'+u.sha(binary)+'\n')
+                return p
+            old=make_runtime('0.8.4')
+            rollback=make_runtime('0.8.5')
+            active=make_runtime('0.8.6')
+            unmanaged=make_runtime('0.8.2', managed=False)
+            changed=make_runtime('0.8.3')
+            (changed/'chatgpt-cef-v2').write_text('changed')
+            another=root/'runtime-v0.8.1'
+            another.mkdir()
+            linked=root/'runtime-local-preview-github-v0.8.1'
+            linked.symlink_to(old, target_is_directory=True)
+            removed=u.prune_retired_managed_runtimes(root,{active,rollback})
+            self.assertEqual(removed,['runtime-local-preview-github-v0.8.4'])
+            self.assertFalse(old.exists())
+            self.assertTrue(rollback.exists() and active.exists())
+            self.assertTrue(unmanaged.exists() and changed.exists())
+            self.assertTrue(another.exists() and linked.is_symlink())
 
     def test_timer_service_does_not_block_chromium_root_owned_suid_sandbox(self):
         installer=(Path(__file__).resolve().parents[1]/'scripts/install-preview-update-timer.sh').read_text()

@@ -262,6 +262,33 @@ def wait_smoke(candidate, app):
             try:x.wait(timeout=5)
             except subprocess.TimeoutExpired:x.kill();x.wait()
 
+def prune_retired_managed_runtimes(root, protected):
+    """Remove only older verified updater-owned release runtimes.
+
+    The active and immediate rollback generations are always preserved.
+    Legacy/native QA runtimes without this updater's marker are never pruned.
+    """
+    removed = []
+    for old in sorted(root.iterdir()):
+        if not re.fullmatch(r"runtime-local-preview-github-v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}", old.name):
+            continue
+        if old in protected or old.is_symlink() or not old.is_dir():
+            continue
+        if old.stat().st_uid != os.getuid() or old.stat().st_mode & 0o022:
+            continue
+        marker = old / ".rc-github-managed-runtime"
+        if not marker.is_file() or marker.is_symlink() or marker.stat().st_uid != os.getuid():
+            continue
+        lines = marker.read_text(encoding="ascii").splitlines()
+        if len(lines) != 2 or lines[0] != old.name or not HASH.fullmatch(lines[1]):
+            continue
+        binary = old / "chatgpt-cef-v2"
+        if not binary.is_file() or binary.is_symlink() or sha(binary) != lines[1]:
+            continue
+        shutil.rmtree(old)
+        removed.append(old.name)
+    return removed
+
 def apply_release(home, app, root, launcher, fallback, current, candidate):
     demand(not subprocess.run(["pgrep", "-x", "chatgpt-cef-v2"],
                               capture_output=True, check=False).returncode == 0,
@@ -290,6 +317,11 @@ def apply_release(home, app, root, launcher, fallback, current, candidate):
         stage.mkdir(mode=0o700)
         try:
             elfsha = extract_runtime(archive, version, stage, fallback)
+            marker = stage / ".rc-github-managed-runtime"
+            demand(not marker.exists() and not marker.is_symlink(),
+                   "release contains reserved updater marker")
+            marker.write_text(dest.name + "\n" + elfsha + "\n", encoding="ascii")
+            marker.chmod(0o600)
             new_launcher = render_launcher(home, dest / "chatgpt-cef-v2", elfsha, fallback)
             # The stage is moved into its final location before the test and atomic launcher switch.
             os.replace(stage, dest)
@@ -319,6 +351,17 @@ def apply_release(home, app, root, launcher, fallback, current, candidate):
             except BaseException:
                 write_atomic(launcher, previous, 0o700)
                 raise
+            # Only after both persistent state and launcher have been promoted.
+            # Pruning is best-effort: a completed update must not be mislabeled
+            # as a failed update merely because old-disk cleanup was deferred.
+            try:
+                removed = prune_retired_managed_runtimes(
+                    root, {dest, Path(current["runtime"])})
+                if removed:
+                    print("PREVIEW_RETIRED_RUNTIMES_REMOVED=" + ",".join(removed))
+            except (OSError, ValueError) as error:
+                print("PREVIEW_RETIRED_RUNTIME_CLEANUP_DEFERRED=" + str(error),
+                      file=sys.stderr)
             print("PREVIEW_AUTO_UPGRADED=" + version)
         finally:
             if stage.exists(): shutil.rmtree(stage)
