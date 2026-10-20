@@ -63,6 +63,14 @@ if [[ -f "$LAUNCHER" ]]; then
   if grep -Fxq "RUNTIME=$RUNTIME" "$LAUNCHER" ||
      grep -Fxq "RUNTIME=\"$RUNTIME\"" "$LAUNCHER" ||
      grep -Fxq "$literal_home" "$LAUNCHER"; then
+    # A stale RUNTIME assignment does not establish which version
+    # an arbitrary launcher actually executes. Reject ambiguity before
+    # deleting shared launcher, desktop, or a requested user profile.
+    mentioned_versions=$(grep -Eo 'runtime-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?' "$LAUNCHER" || true)
+    if [[ -n "$mentioned_versions" ]] &&
+       grep -Fvx "runtime-v$VERSION" <<< "$mentioned_versions" >/dev/null; then
+      printf 'UNINSTALL_LAUNCHER_RUNTIME_AMBIGUOUS\n' >&2; exit 48
+    fi
     active_launcher=true
   fi
 fi

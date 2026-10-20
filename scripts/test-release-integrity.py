@@ -538,6 +538,46 @@ class ReleaseIntegrityTests(unittest.TestCase):
                 self.assertEqual(desktop.read_text(), "KEEP_DESKTOP")
                 self.assertEqual((profile / "session").read_text(), "KEEP_PROFILE")
 
+    @unittest.skipUnless(os.name == "posix", "Linux launcher exec-target identity semantics")
+    def test_uninstall_stale_old_assignment_with_newer_exec_preserves_shared_files(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        for purge in (False, True):
+            with self.subTest(purge=purge):
+                home = self.root / ("stale-old-assignment-purge" if purge else "stale-old-assignment")
+                old = home / ".local/share/chatgpt-cef-v2" / f"runtime-v{version}"
+                newer = home / ".local/share/chatgpt-cef-v2/runtime-v9.9.9"
+                old.mkdir(parents=True)
+                newer.mkdir()
+                (old / "KEEP_OLD").write_text("PRESERVE", encoding="utf-8")
+                (newer / "KEEP_NEW").write_text("PRESERVE", encoding="utf-8")
+                launcher = home / ".local/bin/chatgpt-cef-v2"
+                launcher.parent.mkdir(parents=True)
+                source = (
+                    "#!/bin/sh\n"
+                    f'RUNTIME="{old}"\n'
+                    f'exec "{newer}/chatgpt-cef-v2" "$@"\n'
+                )
+                launcher.write_text(source, encoding="utf-8")
+                desktop = home / ".local/share/applications/chatgpt-cef-v2.desktop"
+                desktop.parent.mkdir(parents=True)
+                desktop.write_text("KEEP_DESKTOP", encoding="utf-8")
+                profile = home / ".config/chatgpt-cef-v2"
+                profile.mkdir(parents=True)
+                (profile / "PRIVATE").write_text("PRESERVE", encoding="utf-8")
+                cmd = ["bash", str(ROOT / "scripts/uninstall-local.sh")]
+                if purge:
+                    cmd.append("--purge-profile")
+                result = subprocess.run(
+                    cmd, env={**os.environ, "HOME": str(home)},
+                    capture_output=True, text=True, timeout=12)
+                self.assertEqual(result.returncode, 48, result.stderr)
+                self.assertIn("UNINSTALL_LAUNCHER_RUNTIME_AMBIGUOUS", result.stderr)
+                self.assertEqual(launcher.read_text(encoding="utf-8"), source)
+                self.assertEqual(desktop.read_text(encoding="utf-8"), "KEEP_DESKTOP")
+                self.assertEqual((old / "KEEP_OLD").read_text(), "PRESERVE")
+                self.assertEqual((newer / "KEEP_NEW").read_text(), "PRESERVE")
+                self.assertEqual((profile / "PRIVATE").read_text(), "PRESERVE")
+
     @unittest.skipUnless(os.name == "posix", "Linux launcher identity semantics")
     def test_uninstall_single_old_launcher_removes_only_old_assets(self):
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
