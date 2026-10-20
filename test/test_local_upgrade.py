@@ -5,8 +5,7 @@ import os
 from pathlib import Path
 import stat
 import tempfile
-import unittest
-from unittest import mock
+from unittest import TestCase, main, mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/upgrade-local.py"
 spec = importlib.util.spec_from_file_location("browser_safe_upgrade", SCRIPT)
@@ -18,7 +17,7 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-class TransactionTests(unittest.TestCase):
+class TransactionTests(TestCase):
     VERSION = "0.8.4-rc.1"
     SOURCE = "a" * 40
 
@@ -324,4 +323,4 @@ class TransactionTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()
