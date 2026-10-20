@@ -240,6 +240,11 @@ jobs:
           bash -n test/native-tab-drag-x11.sh
           xvfb-run -a bash test/native-tab-drag-x11.sh | tee .qa/r247-native-tab-drag.out
 
+      - name: Dual isolated X11 native mouse drag and profile noninterference (CI only)
+        run: |
+          bash -n test/multi-session-native-drag-x11.sh
+          timeout 55 bash test/multi-session-native-drag-x11.sh | tee .qa/multi-native-drag.out
+
       - name: Preserve native runtime evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
