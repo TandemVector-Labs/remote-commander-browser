@@ -208,6 +208,64 @@ class GitHubUpdateSafety(unittest.TestCase):
             self.assertTrue(unmanaged.exists() and changed.exists())
             self.assertTrue(another.exists() and linked.is_symlink())
 
+    def test_state_write_failure_rolls_back_and_removes_uncommitted_runtime(self):
+        """A failing state promotion must not leave an orphaned native runtime."""
+        with tempfile.TemporaryDirectory() as d:
+            home=Path(d)
+            app=home/'.local/state/rc-browser-glass-preview'
+            root=home/'.local/share/chatgpt-cef-v2'
+            app.mkdir(parents=True);root.mkdir(parents=True)
+            launcher=home/'.local/bin/rc-browser-glass-preview'
+            launcher.parent.mkdir(parents=True)
+            original=b'previous safe launcher'
+            launcher.write_bytes(original)
+            fallback=root/'trusted-helper'
+            fallback.write_bytes(b'trusted-suid-bytes')
+            filename='remote-commander-browser-v0.8.4-linux-x86_64.tar.gz'
+            bundle=self.make_tar(d,self.entries())
+            expected=u.sha(bundle)
+            checksum=home/'fixture.sha256'
+            checksum.write_text(expected+'  '+filename+'\n')
+            manifest=filename+'.sha256'
+            candidate={
+                'version':'0.8.4','tag':'v0.8.4',
+                'archive':filename,'checksum':manifest,
+                'source_commit':'b'*40,
+                'assets':{
+                    filename:{'digest':'sha256:'+expected},
+                    manifest:{'digest':'sha256:'+u.sha(checksum)}}}
+            current={
+                'version':u.INITIAL_VERSION,'source_commit':u.INITIAL_COMMIT,
+                'launcher_sha256':u.sha(launcher),
+                'elf_sha256':'a'*64, 'runtime':str(root/'previous')}
+            (root/'previous').mkdir()
+            def fake_github(*args,**kwargs):
+                if args[:2]==('release','download'):
+                    target=Path(args[args.index('--dir')+1])
+                    shutil.copy2(bundle,target/filename)
+                    shutil.copy2(checksum,target/manifest)
+                elif args[:2]!=('attestation','verify'):
+                    self.fail(f'unexpected github action: {args}')
+                return ''
+            write_original=u.write_atomic
+            def fail_state_write(path,data,mode):
+                if Path(path)==app/'github-update-state.json':
+                    raise OSError('INJECTED_STATE_WRITE_FAILURE')
+                return write_original(path,data,mode)
+            with mock.patch.object(u,'call',side_effect=fake_github), \
+                 mock.patch.object(u,'wait_smoke') as smoke, \
+                 mock.patch.object(u.subprocess,'run',return_value=subprocess.CompletedProcess(['pgrep'],1)), \
+                 mock.patch.object(u,'write_atomic',side_effect=fail_state_write):
+                with self.assertRaisesRegex(OSError,'INJECTED_STATE_WRITE_FAILURE'):
+                    u.apply_release(home,app,root,launcher,fallback,current,candidate)
+            smoke.assert_called_once()
+            self.assertEqual(launcher.read_bytes(),original)
+            self.assertFalse((app/'github-update-state.json').exists())
+            self.assertFalse((root/'runtime-local-preview-github-v0.8.4').exists(),
+                             'uncommitted CEF runtime must not occupy disk or block retry')
+            self.assertFalse((root/'.preview-stage-0.8.4').exists())
+            self.assertTrue((root/'previous').exists())
+
     def test_timer_service_does_not_block_chromium_root_owned_suid_sandbox(self):
         installer=(Path(__file__).resolve().parents[1]/'scripts/install-preview-update-timer.sh').read_text()
         self.assertIn('PrivateTmp=false',installer)

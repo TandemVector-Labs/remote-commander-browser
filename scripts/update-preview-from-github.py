@@ -325,31 +325,44 @@ def apply_release(home, app, root, launcher, fallback, current, candidate):
             new_launcher = render_launcher(home, dest / "chatgpt-cef-v2", elfsha, fallback)
             # The stage is moved into its final location before the test and atomic launcher switch.
             os.replace(stage, dest)
+            # A successfully extracted runtime is not a committed install.
+            # Do not retain it if native smoke or any pre-commit step fails.
+            # Never remove it when launcher/state references are ambiguous.
             try:
                 wait_smoke(new_launcher, app)
+                previous = launcher.read_bytes()
+                demand(sha(launcher) == current["launcher_sha256"], "launcher changed during update")
+                recovery = app / "previous-launcher.before-github-update"
+                demand(not recovery.is_symlink(), "linked rollback refused")
+                if recovery.exists():
+                    mode = recovery.stat().st_mode
+                    demand(recovery.stat().st_uid == os.getuid()
+                           and stat.S_ISREG(mode) and stat.S_IMODE(mode) == 0o600,
+                           "unsafe rollback record")
+                write_atomic(recovery, previous, 0o600)
+                state = {"version":version, "source_commit":candidate["source_commit"],
+                         "launcher_sha256":hashlib.sha256(new_launcher).hexdigest(),
+                         "elf_sha256":elfsha, "runtime":str(dest)}
+                try:
+                    write_atomic(launcher, new_launcher, 0o700)
+                    write_atomic(app / "github-update-state.json",
+                                 json.dumps(state,indent=2).encode(), 0o600)
+                except BaseException:
+                    write_atomic(launcher, previous, 0o700)
+                    raise
             except BaseException:
-                # Reject invalid release without retaining another 1.5 GiB runtime.
-                shutil.rmtree(dest)
-                raise
-            previous = launcher.read_bytes()
-            demand(sha(launcher) == current["launcher_sha256"], "launcher changed during update")
-            recovery = app / "previous-launcher.before-github-update"
-            # One retained rollback generation, never a growing archive of old products.
-            demand(not recovery.is_symlink(), "linked rollback refused")
-            if recovery.exists():
-                mode = recovery.stat().st_mode
-                demand(recovery.stat().st_uid == os.getuid()
-                       and stat.S_ISREG(mode) and stat.S_IMODE(mode) == 0o600,
-                       "unsafe rollback record")
-            write_atomic(recovery, previous, 0o600)
-            state = {"version":version, "source_commit":candidate["source_commit"],
-                     "launcher_sha256":hashlib.sha256(new_launcher).hexdigest(),
-                     "elf_sha256":elfsha, "runtime":str(dest)}
-            try:
-                write_atomic(launcher, new_launcher, 0o700)
-                write_atomic(app / "github-update-state.json", json.dumps(state,indent=2).encode(), 0o600)
-            except BaseException:
-                write_atomic(launcher, previous, 0o700)
+                # Prove that no installed pointer refers to this new runtime.
+                state_path = app / "github-update-state.json"
+                safe_state = not state_path.exists() and not state_path.is_symlink()
+                if state_path.exists() and not state_path.is_symlink():
+                    try:
+                        old_state = json.loads(state_path.read_text())
+                        safe_state = isinstance(old_state, dict) and old_state.get("runtime") != str(dest)
+                    except (OSError, ValueError):
+                        safe_state = False
+                if (launcher.is_file() and not launcher.is_symlink()
+                        and sha(launcher) == current["launcher_sha256"] and safe_state):
+                    shutil.rmtree(dest)
                 raise
             # Only after both persistent state and launcher have been promoted.
             # Pruning is best-effort: a completed update must not be mislabeled
