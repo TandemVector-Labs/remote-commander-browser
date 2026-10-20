@@ -8,6 +8,16 @@ RUNTIME="$APPROOT/runtime-v$VERSION"
 LAUNCHER="$HOME/.local/bin/chatgpt-cef-v2"
 DESKTOP="$HOME/.local/share/applications/chatgpt-cef-v2.desktop"
 
+# Fail closed if HOME or any parent of HOME is a symlink or a noncanonical
+# alias. Checking only ancestors *below* HOME misses a linked HOME itself and
+# can delete the referenced external runtime, launcher, desktop, or profile.
+home_canonical=$(realpath -e -- "$HOME" 2>/dev/null) || {
+  printf 'UNINSTALL_HOME_REPARSE_REFUSED\n' >&2; exit 49
+}
+if [[ "$HOME" != "$home_canonical" ]]; then
+  printf 'UNINSTALL_HOME_REPARSE_REFUSED\n' >&2; exit 49
+fi
+
 # Do not let an old-version uninstall break a newer active SUID sandbox.
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]] || { printf 'UNINSTALL_VERSION_INVALID\n' >&2; exit 40; }
 # Validate every affected ancestor below HOME before uninstall, sudo or profile purge.
