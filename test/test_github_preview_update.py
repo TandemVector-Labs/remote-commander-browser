@@ -239,6 +239,10 @@ class GitHubUpdateSafety(unittest.TestCase):
                 'launcher_sha256':u.sha(launcher),
                 'elf_sha256':'a'*64, 'runtime':str(root/'previous')}
             (root/'previous').mkdir()
+            recovery=app/'previous-launcher.before-github-update'
+            preserved_rollback=b'legitimate previous-generation rollback launcher'
+            recovery.write_bytes(preserved_rollback)
+            recovery.chmod(0o600)
             def fake_github(*args,**kwargs):
                 if args[:2]==('release','download'):
                     target=Path(args[args.index('--dir')+1])
@@ -260,6 +264,8 @@ class GitHubUpdateSafety(unittest.TestCase):
                     u.apply_release(home,app,root,launcher,fallback,current,candidate)
             smoke.assert_called_once()
             self.assertEqual(launcher.read_bytes(),original)
+            self.assertEqual(recovery.read_bytes(), preserved_rollback,
+                             'failed promotion must preserve the prior rollback generation')
             self.assertFalse((app/'github-update-state.json').exists())
             self.assertFalse((root/'runtime-local-preview-github-v0.8.4').exists(),
                              'uncommitted CEF runtime must not occupy disk or block retry')

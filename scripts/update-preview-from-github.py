@@ -334,21 +334,36 @@ def apply_release(home, app, root, launcher, fallback, current, candidate):
                 demand(sha(launcher) == current["launcher_sha256"], "launcher changed during update")
                 recovery = app / "previous-launcher.before-github-update"
                 demand(not recovery.is_symlink(), "linked rollback refused")
+                prior_recovery = None
                 if recovery.exists():
                     mode = recovery.stat().st_mode
                     demand(recovery.stat().st_uid == os.getuid()
                            and stat.S_ISREG(mode) and stat.S_IMODE(mode) == 0o600,
                            "unsafe rollback record")
-                write_atomic(recovery, previous, 0o600)
+                    prior_recovery = recovery.read_bytes()
                 state = {"version":version, "source_commit":candidate["source_commit"],
                          "launcher_sha256":hashlib.sha256(new_launcher).hexdigest(),
                          "elf_sha256":elfsha, "runtime":str(dest)}
+                recovery_written = False
                 try:
+                    write_atomic(recovery, previous, 0o600)
+                    recovery_written = True
                     write_atomic(launcher, new_launcher, 0o700)
                     write_atomic(app / "github-update-state.json",
                                  json.dumps(state,indent=2).encode(), 0o600)
                 except BaseException:
+                    # Both the launcher and the one retained rollback record
+                    # belong to this promotion. Restore both on failed state
+                    # persistence, rather than losing a valid older fallback.
                     write_atomic(launcher, previous, 0o700)
+                    if recovery_written:
+                        demand(recovery.is_file() and not recovery.is_symlink()
+                               and sha(recovery) == hashlib.sha256(previous).hexdigest(),
+                               "rollback record changed during failed promotion")
+                        if prior_recovery is None:
+                            recovery.unlink()
+                        else:
+                            write_atomic(recovery, prior_recovery, 0o600)
                     raise
             except BaseException:
                 # Prove that no installed pointer refers to this new runtime.
