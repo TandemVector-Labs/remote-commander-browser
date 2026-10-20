@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 from pathlib import Path
-import re
 import sys
 
 class IntegrityError(ValueError):
@@ -21,10 +20,28 @@ def sha256(path: Path) -> str:
             h.update(block)
     return h.hexdigest()
 
-def verify(version: str, directory: Path) -> dict[str, str]:
-    if len(version) > 80 or not re.fullmatch(
-        r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?", version
+def valid_release_version(version: str) -> bool:
+    """Bounded linear-time ASCII parser for the existing release version grammar."""
+    if len(version) > 80:
+        return False
+    core, dash, suffix = version.partition("-")
+    parts = core.split(".")
+    if len(parts) != 3 or any(
+        not part or not part.isascii() or not part.isdecimal() for part in parts
     ):
+        return False
+    if not dash:
+        return True
+    return (
+        bool(suffix)
+        and suffix.isascii()
+        and suffix[0].isalnum()
+        and all(char.isalnum() or char in ".-" for char in suffix[1:])
+    )
+
+
+def verify(version: str, directory: Path) -> dict[str, str]:
+    if not valid_release_version(version):
         raise IntegrityError("Invalid release version")
     directory = Path(directory)
     if directory.is_symlink() or not directory.is_dir():
@@ -90,8 +107,10 @@ def trusted_cli_release_stage(value: Path) -> Path:
     if (
         not dist_root.is_dir()
         or dist_root.is_symlink()
+        or (hasattr(dist_root, "is_junction") and dist_root.is_junction())
         or not candidate.is_dir()
         or candidate.is_symlink()
+        or (hasattr(candidate, "is_junction") and candidate.is_junction())
         or candidate.resolve() != repo_root / "dist" / "release"
     ):
         raise IntegrityError("RELEASE_STAGING_DIRECTORY_DENIED")

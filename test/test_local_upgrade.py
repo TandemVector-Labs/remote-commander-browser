@@ -5,8 +5,7 @@ import os
 from pathlib import Path
 import stat
 import tempfile
-import unittest
-from unittest import mock
+from unittest import TestCase, main, mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/upgrade-local.py"
 spec = importlib.util.spec_from_file_location("browser_safe_upgrade", SCRIPT)
@@ -18,7 +17,7 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-class TransactionTests(unittest.TestCase):
+class TransactionTests(TestCase):
     VERSION = "0.8.4-rc.1"
     SOURCE = "a" * 40
 
@@ -132,6 +131,19 @@ class TransactionTests(unittest.TestCase):
                 upgrade.activate(**self.kwargs())
         self.assert_unmodified()
 
+    def test_distinct_version_with_old_prefix_is_not_same_version(self):
+        for suffix in ("9", ".9", "-next"):
+            with self.subTest(suffix=suffix):
+                self.old_launcher = (
+                    "RUNTIME=/x/runtime-v" + self.VERSION + suffix + "\n"
+                ).encode()
+                self.launcher.write_bytes(self.old_launcher)
+                with self.trusted_fixture():
+                    upgrade.activate(**self.kwargs())
+                    self.assertTrue((self.app / upgrade.STATE).exists())
+                    upgrade.action(self.home, "rollback")
+                self.assert_unmodified()
+
     def test_pending_upgrade_must_be_resolved_before_next_activation(self):
         with self.trusted_fixture():
             upgrade.activate(**self.kwargs())
@@ -216,5 +228,99 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(self.launcher.read_bytes(), self.old_launcher)
 
 
+    def test_world_writable_candidate_binary_is_denied(self):
+        self.binary.chmod(0o777)
+        with self.trusted_fixture():
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe binary"):
+                upgrade.activate(**self.kwargs())
+        self.assert_unmodified()
+
+    def test_world_writable_existing_launcher_is_denied(self):
+        self.launcher.chmod(0o777)
+        with self.trusted_fixture():
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe launcher/desktop"):
+                upgrade.activate(**self.kwargs())
+        self.assert_unmodified()
+
+    def test_finalize_rejects_world_writable_new_launcher_then_rollback_works(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            self.launcher.chmod(0o777)
+            with self.assertRaisesRegex(upgrade.UpgradeError, "finalize conflict"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+        self.assertEqual(stat.S_IMODE(self.launcher.stat().st_mode), 0o755)
+
+    def test_finalize_rejects_world_writable_new_desktop_then_rollback_works(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            self.desktop.chmod(0o666)
+            with self.assertRaisesRegex(upgrade.UpgradeError, "finalize conflict"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+        self.assertEqual(stat.S_IMODE(self.desktop.stat().st_mode), 0o644)
+
+
+    def test_world_writable_approved_package_denied(self):
+        self.package.chmod(0o777)
+        with self.trusted_fixture():
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe staged package"):
+                upgrade.activate(**self.kwargs())
+        self.assert_unmodified()
+
+
+    def test_finalize_revalidates_staged_binary_after_activation(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            original = self.binary.read_bytes()
+            self.binary.write_bytes(original + b"UNTRUSTED_BINARY_DRIFT")
+            with self.assertRaisesRegex(upgrade.UpgradeError, "binary digest mismatch"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            self.binary.write_bytes(original)
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+
+    def test_finalize_revalidates_approved_package_after_activation(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            original = self.package.read_bytes()
+            self.package.write_bytes(original + b"UNTRUSTED_PACKAGE_DRIFT")
+            with self.assertRaisesRegex(upgrade.UpgradeError, "candidate package digest mismatch"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            self.package.write_bytes(original)
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+
+    def test_finalize_revalidates_suid_helper_after_activation(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            original = self.sandbox.read_bytes()
+            self.sandbox.write_bytes(original + b"UNTRUSTED_SANDBOX_DRIFT")
+            with self.assertRaisesRegex(upgrade.UpgradeError, "sandbox digest mismatch"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            self.sandbox.write_bytes(original)
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+
+    def test_finalize_refuses_new_world_writable_package(self):
+        with self.trusted_fixture():
+            upgrade.activate(**self.kwargs())
+            previous = stat.S_IMODE(self.package.stat().st_mode)
+            self.package.chmod(0o777)
+            with self.assertRaisesRegex(upgrade.UpgradeError, "unsafe staged package"):
+                upgrade.action(self.home, "finalize")
+            self.assertTrue((self.app / upgrade.STATE).exists())
+            self.package.chmod(previous)
+            upgrade.action(self.home, "rollback")
+        self.assert_unmodified()
+
+
 if __name__ == "__main__":
-    unittest.main()
+    main()

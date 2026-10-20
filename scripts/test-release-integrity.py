@@ -47,6 +47,27 @@ class ReleaseIntegrityTests(unittest.TestCase):
         with self.assertRaises(MODULE.IntegrityError):
             MODULE.verify(VERSION, self.release)
 
+    def test_release_version_ascii_grammar_and_length_boundaries(self):
+        accepted = (
+            "0.8.1", "001.02.3", "0.8.1-rc.1", "1.2.3-a--",
+            "1.2.3-a.", "1.2.3-" + "a" * 74,
+        )
+        rejected = (
+            "", "1", "1.2", "1.2.3.4", "v1.2.3", "1..3",
+            "1.2.3-", "1.2.3-.rc", "1.2.3--rc",
+            "1.2.3-rc_1", "1.2.3-rc/1", "1.2.3-\n",
+            "1.2.3-\N{LATIN SMALL LETTER E WITH ACUTE}",
+            "1.2.3-" + "a" * 75, "\N{ARABIC-INDIC DIGIT ONE}.2.3",
+        )
+        for version in accepted:
+            with self.subTest(accepted=version):
+                self.assertTrue(MODULE.valid_release_version(version))
+        for version in rejected:
+            with self.subTest(rejected=version):
+                self.assertFalse(MODULE.valid_release_version(version))
+                with self.assertRaises(MODULE.IntegrityError):
+                    MODULE.verify(version, self.release)
+
     def test_exact_payloads_and_producer_hashes(self):
         self.assertEqual(len(MODULE.verify(VERSION, self.release)), 3)
 
@@ -176,6 +197,39 @@ class ReleaseIntegrityTests(unittest.TestCase):
             cwd=fake, capture_output=True, text=True, timeout=15)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
+
+    @unittest.skipUnless(os.name == "nt", "Windows directory junction semantics")
+    def test_cli_rejects_windows_junctioned_stage(self):
+        import sys
+        for name in ("dist", "release"):
+            with self.subTest(junction=name):
+                checkout = self.root / ("junction checkout " + name)
+                (checkout / "scripts").mkdir(parents=True)
+                shutil.copyfile(ROOT / "scripts/verify-release-assets.py",
+                                checkout / "scripts/verify-release-assets.py")
+                external = self.root / ("external junction " + name)
+                external.mkdir()
+                shutil.copytree(self.release, external / "release")
+                if name == "dist":
+                    junction = checkout / "dist"
+                    target = external
+                else:
+                    (checkout / "dist").mkdir()
+                    junction = checkout / "dist/release"
+                    target = external / "release"
+                created = subprocess.run(
+                    ["cmd.exe", "/D", "/C", "mklink", "/J", str(junction), str(target)],
+                    capture_output=True, text=True, timeout=15)
+                self.assertEqual(created.returncode, 0, created.stderr)
+                self.assertTrue(junction.is_junction())
+                # Valid external checksums must not authorize the redirected CLI stage.
+                self.assertEqual(len(MODULE.verify(VERSION, external / "release")), 3)
+                result = subprocess.run(
+                    [sys.executable, str(checkout / "scripts/verify-release-assets.py"),
+                     VERSION, "dist/release"],
+                    cwd=checkout, capture_output=True, text=True, timeout=15)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
 
     @unittest.skipUnless(os.name == "posix", "native POSIX symlink semantics")
     def test_symlink_member_rejected(self):
@@ -404,6 +458,104 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("UNINSTALL_RUNTIME_REPARSE_REFUSED", p.stderr)
         self.assertEqual((outside / "sentinel").read_text(), "DO_NOT_TOUCH")
+
+    @unittest.skipUnless(os.name == "posix", "Linux launcher assignment semantics")
+    def test_uninstall_ambiguous_launcher_preserves_newer_active_version(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        home = self.root / "ambiguous-launcher-home"
+        base = home / ".local/share/chatgpt-cef-v2"
+        old = base / f"runtime-v{version}"
+        newer = base / "runtime-v9.9.9"
+        old.mkdir(parents=True)
+        newer.mkdir()
+        (old / "OLD_SENTINEL").write_text("PRESERVE", encoding="utf-8")
+        (newer / "NEW_SENTINEL").write_text("PRESERVE", encoding="utf-8")
+        launcher = home / ".local/bin/chatgpt-cef-v2"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(
+            "#!/bin/sh\n"
+            f'RUNTIME="{old}"\n'
+            f'RUNTIME="{newer}"\n'
+            'exec "$RUNTIME/chatgpt-cef-v2"\n', encoding="utf-8")
+        desktop = home / ".local/share/applications/chatgpt-cef-v2.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("KEEP_DESKTOP", encoding="utf-8")
+        profile = home / ".config/chatgpt-cef-v2"
+        profile.mkdir(parents=True)
+        (profile / "session").write_text("KEEP_PROFILE", encoding="utf-8")
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts/uninstall-local.sh")],
+            env={**os.environ, "HOME": str(home)},
+            capture_output=True, text=True, timeout=12)
+        self.assertEqual(result.returncode, 48, result.stderr)
+        self.assertIn("UNINSTALL_LAUNCHER_RUNTIME_AMBIGUOUS", result.stderr)
+        self.assertEqual((old / "OLD_SENTINEL").read_text(), "PRESERVE")
+        self.assertEqual((newer / "NEW_SENTINEL").read_text(), "PRESERVE")
+        self.assertTrue(launcher.is_file())
+        self.assertEqual(desktop.read_text(), "KEEP_DESKTOP")
+        self.assertEqual((profile / "session").read_text(), "KEEP_PROFILE")
+
+    @unittest.skipUnless(os.name == "posix", "Linux exported launcher shadow semantics")
+    def test_uninstall_exported_runtime_shadow_preserves_newer_launcher(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        for index, separator in enumerate(("\n", "; ")):
+            with self.subTest(separator=repr(separator)):
+                home = self.root / f"export-shadow-{index}"
+                old = home / ".local/share/chatgpt-cef-v2" / f"runtime-v{version}"
+                newer = home / ".local/share/chatgpt-cef-v2/runtime-v9.9.9"
+                old.mkdir(parents=True)
+                newer.mkdir()
+                (old / "OLD_SENTINEL").write_text("PRESERVE", encoding="utf-8")
+                (newer / "NEW_SENTINEL").write_text("PRESERVE", encoding="utf-8")
+                launcher = home / ".local/bin/chatgpt-cef-v2"
+                launcher.parent.mkdir(parents=True)
+                launcher.write_text(
+                    f'#!/bin/sh\nRUNTIME="{old}"{separator}'
+                    f'export RUNTIME="{newer}"\n',
+                    encoding="utf-8")
+                desktop = home / ".local/share/applications/chatgpt-cef-v2.desktop"
+                desktop.parent.mkdir(parents=True)
+                desktop.write_text("KEEP_DESKTOP", encoding="utf-8")
+                profile = home / ".config/chatgpt-cef-v2"
+                profile.mkdir(parents=True)
+                (profile / "session").write_text("KEEP_PROFILE", encoding="utf-8")
+                result = subprocess.run(
+                    ["bash", str(ROOT / "scripts/uninstall-local.sh")],
+                    env={**os.environ, "HOME": str(home)},
+                    capture_output=True, text=True, timeout=12)
+                self.assertEqual(result.returncode, 48, result.stderr)
+                self.assertIn("UNINSTALL_LAUNCHER_RUNTIME_AMBIGUOUS", result.stderr)
+                self.assertEqual((old / "OLD_SENTINEL").read_text(), "PRESERVE")
+                self.assertEqual((newer / "NEW_SENTINEL").read_text(), "PRESERVE")
+                self.assertTrue(launcher.is_file())
+                self.assertEqual(desktop.read_text(), "KEEP_DESKTOP")
+                self.assertEqual((profile / "session").read_text(), "KEEP_PROFILE")
+
+    @unittest.skipUnless(os.name == "posix", "Linux launcher identity semantics")
+    def test_uninstall_single_old_launcher_removes_only_old_assets(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        home = self.root / "single-old-launcher-home"
+        old = home / ".local/share/chatgpt-cef-v2" / f"runtime-v{version}"
+        old.mkdir(parents=True)
+        launcher = home / ".local/bin/chatgpt-cef-v2"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(
+            f'#!/bin/sh\nRUNTIME="{old}"\n', encoding="utf-8")
+        desktop = home / ".local/share/applications/chatgpt-cef-v2.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("REMOVE_DESKTOP", encoding="utf-8")
+        profile = home / ".config/chatgpt-cef-v2"
+        profile.mkdir(parents=True)
+        (profile / "session").write_text("KEEP_PROFILE", encoding="utf-8")
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts/uninstall-local.sh")],
+            env={**os.environ, "HOME": str(home)},
+            capture_output=True, text=True, timeout=12)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(old.exists())
+        self.assertFalse(launcher.exists())
+        self.assertFalse(desktop.exists())
+        self.assertEqual((profile / "session").read_text(), "KEEP_PROFILE")
 
     @unittest.skipUnless(os.name == "posix", "Linux ancestor-symlink semantics")
     def test_uninstall_rejects_symlinked_runtime_ancestors(self):
