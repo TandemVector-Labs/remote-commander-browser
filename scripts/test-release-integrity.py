@@ -47,6 +47,27 @@ class ReleaseIntegrityTests(unittest.TestCase):
         with self.assertRaises(MODULE.IntegrityError):
             MODULE.verify(VERSION, self.release)
 
+    def test_release_version_ascii_grammar_and_length_boundaries(self):
+        accepted = (
+            "0.8.1", "001.02.3", "0.8.1-rc.1", "1.2.3-a--",
+            "1.2.3-a.", "1.2.3-" + "a" * 74,
+        )
+        rejected = (
+            "", "1", "1.2", "1.2.3.4", "v1.2.3", "1..3",
+            "1.2.3-", "1.2.3-.rc", "1.2.3--rc",
+            "1.2.3-rc_1", "1.2.3-rc/1", "1.2.3-\n",
+            "1.2.3-\N{LATIN SMALL LETTER E WITH ACUTE}",
+            "1.2.3-" + "a" * 75, "\N{ARABIC-INDIC DIGIT ONE}.2.3",
+        )
+        for version in accepted:
+            with self.subTest(accepted=version):
+                self.assertTrue(MODULE.valid_release_version(version))
+        for version in rejected:
+            with self.subTest(rejected=version):
+                self.assertFalse(MODULE.valid_release_version(version))
+                with self.assertRaises(MODULE.IntegrityError):
+                    MODULE.verify(version, self.release)
+
     def test_exact_payloads_and_producer_hashes(self):
         self.assertEqual(len(MODULE.verify(VERSION, self.release)), 3)
 
