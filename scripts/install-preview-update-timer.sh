@@ -24,7 +24,7 @@ install -m 0700 "$SRC" "$BIN"
 cat > "$SERVICE" <<SERVICE
 [Unit]
 Description=Single RC Browser Preview signed GitHub Release updater
-Documentation=https://github.com/Usefull-Skills/remote-commander-browser/pull/123
+Documentation=https://github.com/TandemVector-Labs/remote-commander-browser/pull/123
 ConditionPathExists=$LAUNCH
 
 [Service]

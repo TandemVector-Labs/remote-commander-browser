@@ -17,6 +17,17 @@ u = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(u)
 
 class GitHubUpdateSafety(unittest.TestCase):
+    def test_canonical_org_referenced_for_release_and_provenance(self):
+        """Repository transfer must not weaken the attestation identity check."""
+        expected = 'TandemVector-Labs/remote-commander-browser'
+        self.assertEqual(u.REPO, expected)
+        self.assertEqual(u.WORKFLOW, expected+'/.github/workflows/release.yml')
+        install = (Path(__file__).resolve().parents[1] /
+                   'scripts/install-preview-update-timer.sh').read_text()
+        self.assertIn('Documentation=https://github.com/'+expected+'/pull/123',
+                      install)
+        self.assertNotIn('Usefull-Skills/remote-commander-browser', install)
+
     def test_semver_stable_newer_than_matching_rc(self):
         self.assertGreater(u.parse_version('0.8.3'), u.parse_version('0.8.3-rc.2'))
         self.assertLess(u.parse_version('0.8.1'), u.parse_version('0.8.3-rc.2'))

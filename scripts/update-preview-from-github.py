@@ -21,7 +21,7 @@ import tarfile
 import tempfile
 import time
 
-REPO = "Usefull-Skills/remote-commander-browser"
+REPO = "TandemVector-Labs/remote-commander-browser"
 WORKFLOW = f"{REPO}/.github/workflows/release.yml"
 INITIAL_COMMIT = "5a0a9854649de3e6e3f919e7dc3431765ad42d38"
 INITIAL_VERSION = "0.8.3-rc.2"
