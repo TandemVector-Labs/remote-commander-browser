@@ -396,6 +396,13 @@ class ReleaseIntegrityTests(unittest.TestCase):
         self.assertEqual(rejected.stdout, "")
 
 
+    @unittest.skipUnless(os.name == "posix", "POSIX checkout executable-bit semantics")
+    def test_uninstall_script_keeps_executable_mode(self):
+        # A direct ./scripts/uninstall-local.sh invocation requires Git mode 100755.
+        script = ROOT / "scripts" / "uninstall-local.sh"
+        self.assertTrue(script.stat().st_mode & 0o111,
+                        "uninstall-local.sh lost its tracked executable mode")
+
     @unittest.skipUnless(os.name == "posix", "Linux runtime/symlink semantics")
     def test_uninstall_old_runtime_denies_live_newer_sandbox_symlink(self):
         # A newer stable runtime can depend on a root-owned helper from an
