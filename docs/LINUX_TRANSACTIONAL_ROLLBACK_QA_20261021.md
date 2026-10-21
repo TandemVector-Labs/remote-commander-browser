@@ -32,7 +32,12 @@ No `--no-sandbox` or browser extension fallback is provided.
   covers a process interruption at the simulated swap boundary, **not**
   verified power-loss durability. File data and parent-directory `fsync`
   now have passing unit/injected-failure tests; real power-cut persistence
-  and live process-kill interruption remain separate acceptance requirements.
+  remains a separate acceptance requirement. Two actual child-process forced-exit
+  boundary tests are now part of the repeatable automated QA suite: one exits
+  before atomic promotion, preserving the old current pointer; another exits
+  immediately after promotion and verifies the retained rollback alias can
+  restore the former current pointer. These are **not** physical power-cut
+  or automatic health-gated rollback acceptance.
 - Staged regular files are `fsync`ed before promotion, followed by child
   directories (bottom-up) and the parent install directory after renames.
   Directory-sync errors fail closed; injected post-promotion `fsync` failure
@@ -45,7 +50,7 @@ No `--no-sandbox` or browser extension fallback is provided.
 
 ## Verified source QA
 Base browser Git commit: `10e5bc57ae4301b009df9736483c62c1ebad3695`.
-- Unit/negative tests: **17 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
+- Unit/negative tests: **19 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
 - Real offline CEF build payload (1.5 GiB): isolated staged install PASS;
   browser SHA256
   `4d3f2b6a5389a9a2f2ae82f1f09e940c47eb29cd2e7a88504473fdcb80e3e08d`;

@@ -226,6 +226,65 @@ class TestTransactionalLinux(unittest.TestCase):
                 module.install(Namespace(source=str(self.new),install_root=str(self.app),
                     trusted_sandbox=str(TRUSTED),version="0.8.2",fault="None"))
         self.assertEqual(self.target(),old)
+    def run_forced_exit_at_atomic_boundary(self, mode):
+        """Separate child process exits without cleanup at precise rename boundary."""
+        self.good(self.invoke(version="0.8.1"))
+        original = self.target()
+        child = r'''
+import importlib.util
+import os
+from pathlib import Path
+from argparse import Namespace
+script=Path(os.environ["RC_QA_SCRIPT"])
+spec=importlib.util.spec_from_file_location("qa_installer", script)
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real_replace=Path.replace
+def intercepted(self,target):
+    if self.name.startswith("current.pending-") and Path(target).name=="current":
+        if os.environ["RC_QA_MODE"]=="before":
+            os._exit(72)
+        result=real_replace(self,target)
+        os._exit(73)
+    return real_replace(self,target)
+Path.replace=intercepted
+module.install(Namespace(source=os.environ["RC_QA_SOURCE"],
+    install_root=os.environ["RC_QA_ROOT"],
+    trusted_sandbox=os.environ["RC_QA_HELPER"], version="0.8.2", fault="None"))
+raise SystemExit(99)
+'''
+        env=os.environ.copy()
+        env.update(RC_QA_SCRIPT=str(SCRIPT), RC_QA_SOURCE=str(self.new),
+            RC_QA_ROOT=str(self.app), RC_QA_HELPER=str(TRUSTED),
+            RC_QA_MODE=mode)
+        child_result=subprocess.run([sys.executable,"-c",child],
+            env=env,capture_output=True,text=True,timeout=18)
+        self.assertEqual(child_result.returncode,
+            72 if mode=="before" else 73,child_result.stderr)
+        alias=list(self.app.glob("current.rollback-*"))
+        self.assertEqual(len(alias),1)
+        self.assertTrue(alias[0].is_symlink())
+        self.assertEqual(os.readlink(alias[0]),original)
+        if mode=="before":
+            self.assertEqual(self.target(),original)
+            self.assertEqual(len(list(self.app.glob("current.pending-*"))),1)
+        else:
+            self.assertNotEqual(self.target(),original)
+            self.assertEqual(len(list(self.app.glob("current.pending-*"))),0)
+            alias[0].replace(self.app/"current")
+            fd=os.open(self.app,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            self.assertEqual(self.target(),original)
+
+    def test_forced_exit_before_pointer_swap_preserves_baseline(self):
+        self.run_forced_exit_at_atomic_boundary("before")
+
+    def test_forced_exit_after_pointer_swap_supports_manual_rollback(self):
+        self.run_forced_exit_at_atomic_boundary("after")
+
     def test_launcher_and_no_credential_access(self):
         self.good(self.invoke())
         launcher=self.app/"current"/"launch.sh"
