@@ -13,6 +13,15 @@ void AppClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
     c->OnTitleChange(browser, title.ToString());
 }
 
+void AppClient::OnAddressChange(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame,
+                                const CefString& url) {
+  CEF_REQUIRE_UI_THREAD();
+  if (frame && frame->IsMain())
+    if (auto* controller = AppController::Get())
+      controller->OnNativeAddressChange(browser, url.ToString());
+}
+
 void AppClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UI_THREAD();
   LOG(WARNING) << "CGWA_LIFE OnAfterCreated browser=" << browser->GetIdentifier();

@@ -899,6 +899,11 @@ void AppController::UpdateCompanionPanel() {
   }
   const uint64_t now=companion::NowEpochMs();
   auto rows = companion::DescribeMonitor(companion_monitor_, now);
+  const auto native = native_chat_observer_.Snapshot();
+  rows.insert(rows.begin(), companion::DisplayRow{
+      "Browser Core | Chat tabs " + std::to_string(native.open_tabs) +
+          " | Conversations " + std::to_string(native.conversations),
+      "CEF-owned in-process observation only; no extension, Native Host, account attestation or chat automation"});
   const auto automation_rows = companion::DescribeAutomation(companion_automation_, companion_monitor_, now);
   rows.insert(rows.end(), automation_rows.begin(), automation_rows.end());
   const auto binding_rows = companion::Describe(companion_observation_, companion_binding_, active_url, now);
@@ -983,7 +988,7 @@ void AppController::RunCompanionSelfTest() {
 
 void AppController::NewTab(const std::string& url) {
   CEF_REQUIRE_UI_THREAD();
-  if (!window_ || tabs_.size() >= 8) return;
+  if (!window_ || !rc_ui::CanCreateTab(static_cast<int>(tabs_.size()))) return;
 
   const std::string initial_url = url.empty() ? "https://chatgpt.com/" : url;
   CefBrowserSettings settings;
@@ -1005,6 +1010,7 @@ void AppController::NewTab(const std::string& url) {
     tabs_.pop_back();
     return;
   }
+  native_chat_observer_.Observe(added.id, initial_url);
   // Overlay BrowserViews are hidden by default. Only the active tab is shown.
   added.overlay->SetVisible(false);
   LayoutTabOverlays();
@@ -1020,6 +1026,7 @@ void AppController::SetActiveTabInternal(int tab_id) {
   Tab* target = FindTabById(tab_id);
   if (!target) return;
   active_tab_id_ = tab_id;
+  native_chat_observer_.SetActive(tab_id);
   RebuildTabStrip();
   for (auto& tab : tabs_) {
     const bool active = tab.id == tab_id;
@@ -1637,6 +1644,7 @@ void AppController::OnBrowserClosed(CefRefPtr<CefBrowser> browser) {
 
   const bool was_active = it->id == active_tab_id_;
   const size_t index = static_cast<size_t>(std::distance(tabs_.begin(), it));
+  native_chat_observer_.Closed(it->id);
   tabs_.erase(it);
   if (closing_) {
     LOG(WARNING) << "CGWA_SHUTDOWN BROWSER_CLOSED remaining=" << tabs_.size();
@@ -1664,6 +1672,15 @@ void AppController::OnTitleChange(CefRefPtr<CefBrowser> browser,
   if (!tab) return;
   tab->title = title.empty() ? "ChatGPT" : title;
   UpdateTabButton(*tab);
+}
+
+void AppController::OnNativeAddressChange(CefRefPtr<CefBrowser> browser,
+                                           const std::string& url) {
+  CEF_REQUIRE_UI_THREAD();
+  Tab* tab = FindTabByBrowser(browser);
+  if (!tab) return;
+  native_chat_observer_.Observe(tab->id, url);
+  if (tab->id == active_tab_id_) UpdateCompanionPanel();
 }
 
 void AppController::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,

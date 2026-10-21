@@ -3,6 +3,9 @@
 #include <algorithm>
 
 namespace rc_ui {
+// Bounded multi-chat workspace: up to 16 native CEF tabs; visual strip remains virtualized.
+constexpr int kMaxNativeTabs = 16;
+inline bool CanCreateTab(int tab_count) { return tab_count >= 0 && tab_count < kMaxNativeTabs; }
 struct TabWindow {
   int first;
   int visible;

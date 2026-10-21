@@ -17,9 +17,12 @@ if(CGWA_COMPANION_TESTS_ONLY)
   add_test(NAME companion-contract COMMAND companion-contract-test --fixture "${CMAKE_CURRENT_SOURCE_DIR}/src/companion-emitted-fixture.json")
   add_executable(tab-order-contract-test src/ui_tab_order_test.cc)
   target_compile_features(tab-order-contract-test PRIVATE cxx_std_17)
-  # Windows workflow builds the companion target explicitly; include the tab contract.
-  add_dependencies(companion-contract-test tab-order-contract-test)
   add_test(NAME tab-order-contract COMMAND tab-order-contract-test)
+  add_executable(native-chat-observer-test src/native_chat_observer_test.cc)
+  target_compile_features(native-chat-observer-test PRIVATE cxx_std_17)
+  add_test(NAME native-chat-observer COMMAND native-chat-observer-test)
+  # CI on Windows builds only companion-contract-test: build every registered contract executable.
+  add_dependencies(companion-contract-test tab-order-contract-test native-chat-observer-test)
   return()
 endif()
 
