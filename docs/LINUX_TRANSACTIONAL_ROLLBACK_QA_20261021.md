@@ -16,6 +16,11 @@ No `--no-sandbox` or browser extension fallback is provided.
 ## Properties under test
 - Always deploys into a new immutable version directory, verifying the copied
   file-by-file payload hashes before promotion.
+- All restricted QA root gates compare the **resolved** real install path,
+  before creating any directory. Symlinked ancestor escapes, fault-injection
+  exits outside the dedicated fixture, and install roots aliased inside a
+  source payload are refused before mutation. Three new negative tests
+  specifically cover those path traversal cases.
 - Exclusive `flock`; restricted-owner install directory; refuses unknown
   current pointers, arbitrary payload symlinks, traversal/malformed versions
   and same-version overwrites.
@@ -64,7 +69,7 @@ No `--no-sandbox` or browser extension fallback is provided.
 
 ## Verified source QA
 Base browser Git commit: `10e5bc57ae4301b009df9736483c62c1ebad3695`.
-- Unit/negative tests: **25 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
+- Unit/negative tests: **28 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
 - Real offline CEF build payload (1.5 GiB): isolated staged install PASS;
   browser SHA256
   `4d3f2b6a5389a9a2f2ae82f1f09e940c47eb29cd2e7a88504473fdcb80e3e08d`;

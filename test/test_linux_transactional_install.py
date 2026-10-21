@@ -312,6 +312,32 @@ raise SystemExit(99)
     def test_forced_exit_after_pointer_swap_supports_manual_rollback(self):
         self.run_forced_exit_at_atomic_boundary("after")
 
+    def test_qa_canary_ancestor_symlink_cannot_escape_fixture(self):
+        with tempfile.TemporaryDirectory() as outside:
+            link=self.tmp/"outside-qa-ancestor"
+            link.symlink_to(outside,target_is_directory=True)
+            target=link/"escaped-install"
+            rejected=self.invoke(root=target,qa_canary=True)
+            self.assertEqual(rejected.returncode,2)
+            self.assertIn("PUBLIC_QA_CANARY_FORBIDDEN",rejected.stderr)
+            self.assertFalse((Path(outside)/"escaped-install").exists())
+    def test_fault_injection_ancestor_symlink_cannot_escape_fixture(self):
+        with tempfile.TemporaryDirectory() as outside:
+            link=self.tmp/"outside-fault-ancestor"
+            link.symlink_to(outside,target_is_directory=True)
+            target=link/"escaped-install"
+            rejected=self.invoke(root=target,fault="AfterBaselineMove")
+            self.assertEqual(rejected.returncode,2)
+            self.assertIn("PUBLIC_FAULT_INJECTION_FORBIDDEN",rejected.stderr)
+            self.assertFalse((Path(outside)/"escaped-install").exists())
+    def test_resolved_install_root_cannot_be_inside_payload(self):
+        alias=self.tmp/"source-root-alias"
+        alias.symlink_to(self.new,target_is_directory=True)
+        bad=self.invoke(source=self.new,root=alias/"must-not-create")
+        self.assertEqual(bad.returncode,2)
+        self.assertIn("INVALID_SOURCE_ROOT",bad.stderr)
+        self.assertFalse((self.new/"must-not-create").exists())
+
     def test_private_qa_canary_success_promotes(self):
         self.good(self.invoke(version="0.8.1"))
         old=self.target()

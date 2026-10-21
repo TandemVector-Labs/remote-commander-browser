@@ -122,8 +122,9 @@ def install(args):
     helper = Path(args.trusted_sandbox).resolve(strict=True)
     ensure(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?", args.version) is not None,
            "INVALID_VERSION")
-    ensure(source.is_dir() and source != root and not root.is_relative_to(source),
-           "INVALID_SOURCE_ROOT")
+    real_root = root.resolve(strict=False)
+    ensure(source.is_dir() and source != real_root and
+           not real_root.is_relative_to(source), "INVALID_SOURCE_ROOT")
     ensure((source / "chatgpt-cef-v2").is_file() and
            os.access(source / "chatgpt-cef-v2", os.X_OK), "BROWSER_EXE_MISSING")
     ensure((source / "chrome-sandbox").is_file(), "BROWSER_SANDBOX_MISSING")
@@ -133,18 +134,20 @@ def install(args):
     ensure(hs.st_uid == 0 and stat.S_IMODE(hs.st_mode) == 0o4755 and
            stat.S_ISREG(hs.st_mode), "SANDBOX_TRUST_ROOT_MISSING")
     ensure(not root.is_symlink(), "SYMLINK_INSTALL_ROOT_REJECTED")
+    # Resolve every parent before any mkdir: a lexical path under the QA root
+    # could otherwise follow an ancestor symlink into a production directory.
+    fixture = (Path(__file__).resolve().parents[1] /
+               "test" / "linux-swap-fixture-r1").resolve(strict=False)
+    if args.fault != "None":
+        ensure(real_root.is_relative_to(fixture) and real_root != fixture,
+               "PUBLIC_FAULT_INJECTION_FORBIDDEN")
+    if getattr(args, "qa_canary", False):
+        ensure(real_root.is_relative_to(fixture) and real_root != fixture,
+               "PUBLIC_QA_CANARY_FORBIDDEN")
     if not root.exists():
         root.mkdir(mode=0o700, parents=True)
     ensure(root.is_dir() and root.stat().st_uid == os.getuid() and
            not(root.stat().st_mode & 0o022), "UNSAFE_INSTALL_ROOT")
-    # Only QA fixtures may inject failures; no production use of this mechanism.
-    fixture = Path(__file__).resolve().parents[1] / "test" / "linux-swap-fixture-r1"
-    if args.fault != "None":
-        ensure(root.is_relative_to(fixture) and root != fixture,
-               "PUBLIC_FAULT_INJECTION_FORBIDDEN")
-    if getattr(args, "qa_canary", False):
-        ensure(root.is_relative_to(fixture) and root != fixture,
-               "PUBLIC_QA_CANARY_FORBIDDEN")
     lock_path = root / ".swap.lock"
     ensure(not lock_path.is_symlink(), "LOCK_SYMLINK_REFUSED")
     lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
