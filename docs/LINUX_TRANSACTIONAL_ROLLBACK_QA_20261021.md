@@ -46,6 +46,17 @@ No `--no-sandbox` or browser extension fallback is provided.
   Directory-sync errors fail closed; injected post-promotion `fsync` failure
   restores the previous link. Tests confirm file and directory sync calls,
   but physical crash/power-loss behavior is not claimed.
+- **Explicit QA-only health-gated activation** (`--qa-canary`) is allowed only
+  inside the dedicated fixture root. A bounded child process launches the
+  integrity-checking candidate with an isolated private `HOME`/XDG profile
+  and a minimal environment, no user cookies or credentials. Nonzero exit
+  or timeout automatically restores the prior `current` pointer atomically;
+  process-group cleanup prevents a timed-out smoke check from persisting.
+  Successful candidate checks continue the transaction normally.
+  Five security/contract tests cover success, failure rollback, timeout
+  rollback, environment scrubbing and rejection outside QA. These use
+  synthetic executables: **production CEF canary and auth continuity still
+  OPEN**, and this option never enables automatic updates.
 - Separate `launch.sh` verifies executable and root-owned SUID sandbox SHA
   and mode on every invocation; no profile/credentials are copied.
 - Key material, accounts, production routing, ChatGPT conversations and
@@ -53,7 +64,7 @@ No `--no-sandbox` or browser extension fallback is provided.
 
 ## Verified source QA
 Base browser Git commit: `10e5bc57ae4301b009df9736483c62c1ebad3695`.
-- Unit/negative tests: **20 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
+- Unit/negative tests: **25 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
 - Real offline CEF build payload (1.5 GiB): isolated staged install PASS;
   browser SHA256
   `4d3f2b6a5389a9a2f2ae82f1f09e940c47eb29cd2e7a88504473fdcb80e3e08d`;

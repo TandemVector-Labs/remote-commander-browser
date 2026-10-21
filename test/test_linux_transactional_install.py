@@ -40,10 +40,14 @@ class TestTransactionalLinux(unittest.TestCase):
         (src / "chatgpt-cef-v2").chmod(0o700)
         (src / "chrome-sandbox").symlink_to(TRUSTED.resolve())
         return src
-    def invoke(self, source=None, version="0.8.3-rc.2", fault="None", root=None, trusted=None):
-        return subprocess.run([sys.executable, str(SCRIPT), "--source", str(source or self.old),
-            "--install-root", str(root or self.app), "--trusted-sandbox", str(trusted or TRUSTED),
-            "--version", version, "--fault", fault], capture_output=True, text=True, timeout=18)
+    def invoke(self, source=None, version="0.8.3-rc.2", fault="None", root=None, trusted=None,
+               qa_canary=False, canary_timeout=5):
+        args=[sys.executable, str(SCRIPT), "--source", str(source or self.old),
+              "--install-root", str(root or self.app), "--trusted-sandbox", str(trusted or TRUSTED),
+              "--version", version, "--fault", fault]
+        if qa_canary:
+            args += ["--qa-canary", "--qa-canary-timeout", str(canary_timeout)]
+        return subprocess.run(args, capture_output=True, text=True, timeout=18)
     def good(self,p):
         self.assertEqual(p.returncode,0,p.stderr)
         return json.loads(p.stdout)
@@ -308,6 +312,56 @@ raise SystemExit(99)
     def test_forced_exit_after_pointer_swap_supports_manual_rollback(self):
         self.run_forced_exit_at_atomic_boundary("after")
 
+    def test_private_qa_canary_success_promotes(self):
+        self.good(self.invoke(version="0.8.1"))
+        old=self.target()
+        result=self.good(self.invoke(source=self.new,version="0.8.2",qa_canary=True))
+        self.assertNotEqual(old,self.target())
+        self.assertEqual(result["previous"],old)
+        self.assertEqual(len(list(self.app.glob(".qa-canary-*"))),0)
+    def test_qa_canary_nonzero_exit_auto_rolls_back(self):
+        self.good(self.invoke(version="0.8.1"))
+        old=self.target()
+        (self.new/"chatgpt-cef-v2").write_text("#!/bin/sh\nexit 17\n")
+        (self.new/"chatgpt-cef-v2").chmod(0o700)
+        bad=self.invoke(source=self.new,version="0.8.2",qa_canary=True)
+        self.assertEqual(bad.returncode,2,bad.stderr)
+        self.assertIn("QA_CANARY_FAILED_EXIT",bad.stderr)
+        self.assertEqual(old,self.target())
+        self.assertEqual(len(list(self.app.glob(".qa-canary-*"))),0)
+    def test_qa_canary_timeout_auto_rolls_back(self):
+        self.good(self.invoke(version="0.8.1"))
+        old=self.target()
+        (self.new/"chatgpt-cef-v2").write_text("#!/bin/sh\nsleep 10\n")
+        (self.new/"chatgpt-cef-v2").chmod(0o700)
+        bad=self.invoke(source=self.new,version="0.8.2",qa_canary=True,canary_timeout=1)
+        self.assertEqual(bad.returncode,2,bad.stderr)
+        self.assertIn("QA_CANARY_TIMEOUT",bad.stderr)
+        self.assertEqual(old,self.target())
+        self.assertEqual(len(list(self.app.glob(".qa-canary-*"))),0)
+    def test_public_qa_canary_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            bad=self.invoke(root=Path(d)/"external",qa_canary=True)
+            self.assertEqual(bad.returncode,2)
+            self.assertIn("PUBLIC_QA_CANARY_FORBIDDEN",bad.stderr)
+            self.assertFalse((Path(d)/"external"/"current").exists())
+    def test_qa_canary_scrubs_environment_and_profiles(self):
+        self.good(self.invoke(version="0.8.1"))
+        exe=self.new/"chatgpt-cef-v2"
+        exe.write_text('#!/bin/sh\n'
+                       'test -z "${RC_QA_SENTINEL:-}" || exit 41\n'
+                       'test -d "$HOME" || exit 42\n'
+                       'test "$HOME" = "$XDG_CONFIG_HOME" && exit 43\n'
+                       'case "$HOME" in *"/.qa-canary-"*) exit 0;; *) exit 44;; esac\n')
+        exe.chmod(0o700)
+        old=os.environ.get("RC_QA_SENTINEL")
+        os.environ["RC_QA_SENTINEL"]="SHOULD_NOT_PASS"
+        try:
+            good=self.invoke(source=self.new,version="0.8.2",qa_canary=True)
+        finally:
+            if old is None: os.environ.pop("RC_QA_SENTINEL",None)
+            else: os.environ["RC_QA_SENTINEL"]=old
+        self.good(good)
     def test_launcher_and_no_credential_access(self):
         self.good(self.invoke())
         launcher=self.app/"current"/"launch.sh"

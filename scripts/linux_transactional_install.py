@@ -16,7 +16,9 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import signal
 import stat
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -66,6 +68,39 @@ def sync_payload(root: Path):
         sync_dir(directory)
 
 
+def qa_canary_check(root: Path, dest: Path, swap_id: str, seconds: int):
+    """Owner-invoked offline synthetic canary; never uses a primary browser profile."""
+    ensure(1 <= seconds <= 15, "QA_CANARY_TIMEOUT_OUT_OF_RANGE")
+    profile = root / (".qa-canary-" + swap_id)
+    ensure(not os.path.lexists(profile), "QA_CANARY_PROFILE_ALREADY_EXISTS")
+    profile.mkdir(mode=0o700)
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(profile), "LANG": "C",
+           "XDG_CONFIG_HOME": str(profile / "config"),
+           "XDG_CACHE_HOME": str(profile / "cache"),
+           "XDG_DATA_HOME": str(profile / "data")}
+    cmd = [str(dest / "launch.sh"), "--background-test", "--self-test",
+           "--shutdown-self-test", "--host-resolver-rules=MAP * ~NOTFOUND",
+           "--cgwa-profile-dir=" + str(profile)]
+    child = None
+    try:
+        child = subprocess.Popen(cmd, cwd=profile, env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            start_new_session=True)
+        try:
+            _, errors = child.communicate(timeout=seconds)
+        except subprocess.TimeoutExpired as exc:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.communicate(timeout=5)
+            raise InstallError("QA_CANARY_TIMEOUT") from exc
+        ensure(child.returncode == 0, "QA_CANARY_FAILED_EXIT")
+    finally:
+        if child is not None and child.poll() is None:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait(timeout=5)
+        shutil.rmtree(profile)
+        sync_dir(root)
+
+
 def contents(src: Path, helper: Path):
     entries = []
     for p in sorted(src.rglob("*")):
@@ -103,10 +138,13 @@ def install(args):
     ensure(root.is_dir() and root.stat().st_uid == os.getuid() and
            not(root.stat().st_mode & 0o022), "UNSAFE_INSTALL_ROOT")
     # Only QA fixtures may inject failures; no production use of this mechanism.
+    fixture = Path(__file__).resolve().parents[1] / "test" / "linux-swap-fixture-r1"
     if args.fault != "None":
-        fixture = Path(__file__).resolve().parents[1] / "test" / "linux-swap-fixture-r1"
         ensure(root.is_relative_to(fixture) and root != fixture,
                "PUBLIC_FAULT_INJECTION_FORBIDDEN")
+    if getattr(args, "qa_canary", False):
+        ensure(root.is_relative_to(fixture) and root != fixture,
+               "PUBLIC_QA_CANARY_FORBIDDEN")
     lock_path = root / ".swap.lock"
     ensure(not lock_path.is_symlink(), "LOCK_SYMLINK_REFUSED")
     lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -211,6 +249,9 @@ def install(args):
             sync_dir(root)
             if args.fault == "AfterCandidateMove":
                 raise InstallError("QA_FAULT_AFTER_CANDIDATE_MOVE")
+            if getattr(args, "qa_canary", False):
+                qa_canary_check(root, dest, swap_id,
+                    int(getattr(args, "qa_canary_timeout", 5)))
             ensure(current.is_symlink() and os.readlink(current) == stem,
                    "CURRENT_PROMOTION_VERIFY_FAILED")
         except Exception as exc:
@@ -240,6 +281,8 @@ def main():
     p.add_argument("--version", required=True)
     p.add_argument("--fault", choices=["None", "AfterBaselineMove", "AfterCandidateMove"],
                    default="None")
+    p.add_argument("--qa-canary", action="store_true", help="QA fixture only; never enables updates")
+    p.add_argument("--qa-canary-timeout", type=int, default=5)
     args = p.parse_args()
     try:
         print(json.dumps(install(args), sort_keys=True))
