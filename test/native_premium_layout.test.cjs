@@ -68,3 +68,14 @@ test("dark horizontal tab gaps keep themed parent panel, including layout orient
  assert.match(s,/tab.ui_panel->SetBackgroundColor\(vertical/);
  assert.match(s,/settings.between_child_spacing = vertical \? 5 : 3/);
 });
+
+test("owner preview uses native overlay scrollbar without webpage CSS and keeps explicit GPU fallback",()=>{
+ const app=fs.readFileSync(path.join(__dirname,"../src/app.cc"),"utf8");
+ assert.match(app,/HasSwitch\("rc-colorful-chrome-preview"\)/);
+ assert.match(app,/HasSwitch\("enable-features"\)/);
+ assert.match(app,/AppendSwitchWithValue\("enable-features", "OverlayScrollbar"\)/);
+ assert.match(app,/if \(!command_line->HasSwitch\("disable-gpu"\)\)/);
+ assert.match(app,/AppendSwitch\("enable-gpu-rasterization"\)/);
+ assert.match(app,/AppendSwitch\("enable-zero-copy"\)/);
+ assert.doesNotMatch(app,/InsertCSS|ExecuteJavaScript|setAttribute\(/);
+});

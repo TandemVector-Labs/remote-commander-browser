@@ -36,6 +36,10 @@ jobs:
         run: node --test test/runtime_selftest_stream.test.cjs
       - name: Transactional local upgrade and rollback failure-injection regressions
         run: python3 -m unittest discover -s test -p test_local_upgrade.py -v
+      - name: Single Glass Preview GitHub updater fail-closed and atomic switch regressions
+        run: |
+          bash -n scripts/install-preview-update-timer.sh
+          python3 -m unittest discover -s test -p test_github_preview_update.py -v
       - name: Run native contract and Linux private-file guards
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
@@ -235,6 +239,11 @@ jobs:
         run: |
           bash -n test/native-tab-drag-x11.sh
           xvfb-run -a bash test/native-tab-drag-x11.sh | tee .qa/r247-native-tab-drag.out
+
+      - name: Dual isolated X11 native mouse drag and profile noninterference (CI only)
+        run: |
+          bash -n test/multi-session-native-drag-x11.sh
+          timeout 55 bash test/multi-session-native-drag-x11.sh | tee .qa/multi-native-drag.out
 
       - name: Preserve native runtime evidence even on failure
         if: always()
