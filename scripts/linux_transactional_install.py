@@ -38,6 +38,34 @@ def sha256(p: Path) -> str:
     return h.hexdigest()
 
 
+def sync_dir(path: Path):
+    """Persist directory entries, including symlink renames on POSIX filesystems."""
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def sync_payload(root: Path):
+    """Flush every staged regular file, then directories bottom-up before activation."""
+    dirs = []
+    for location, _, filenames in os.walk(root, followlinks=False):
+        directory = Path(location)
+        dirs.append(directory)
+        for name in filenames:
+            path = directory / name
+            if path.is_symlink():
+                continue
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    for directory in reversed(dirs):
+        sync_dir(directory)
+
+
 def contents(src: Path, helper: Path):
     entries = []
     for p in sorted(src.rglob("*")):
@@ -111,6 +139,7 @@ def install(args):
                            (root / target).resolve().parent == root.resolve(),
                            "INTERRUPTED_SWAP_INVALID_TARGET")
                 recovered.replace(current)
+                sync_dir(root)
         previous = None
         if os.path.lexists(current):
             ensure(current.is_symlink(), "CURRENT_NOT_SYMLINK")
@@ -160,21 +189,26 @@ def install(args):
                 "test \"$(stat -Lc '%u:%a' \"$SANDBOX\")\" = 0:4755 || exit 25\n"
                 "exec \"$BIN\" \"$@\"\n")
             launcher.chmod(0o700)
+            sync_payload(stage)
             stage.replace(dest)
+            sync_dir(root)
         except Exception:
             # Leave diagnostics for inspection, never change current.
             raise
         pending.symlink_to(stem)
+        sync_dir(root)
         moved = False
         try:
             if previous:
                 # Preserve the previous pointer as a separate validated alias;
                 # never remove the live current link before the atomic replacement.
                 rollback.symlink_to(previous)
+                sync_dir(root)
                 moved = True
             if args.fault == "AfterBaselineMove":
                 raise InstallError("QA_FAULT_AFTER_BASELINE_MOVE")
             pending.replace(current)
+            sync_dir(root)
             if args.fault == "AfterCandidateMove":
                 raise InstallError("QA_FAULT_AFTER_CANDIDATE_MOVE")
             ensure(current.is_symlink() and os.readlink(current) == stem,
@@ -184,6 +218,7 @@ def install(args):
                 current.replace(failed)
             if moved:
                 rollback.replace(current)
+                sync_dir(root)
             ensure(previous is None or
                    (current.is_symlink() and os.readlink(current) == previous),
                    "ROLLBACK_UNRESOLVED")

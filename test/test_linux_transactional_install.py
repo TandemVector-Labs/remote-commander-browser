@@ -190,6 +190,42 @@ class TestTransactionalLinux(unittest.TestCase):
         self.assertEqual(bad.returncode,2)
         self.assertIn("INTERRUPTED_SWAP_NO_RECOVERABLE_BASELINE",bad.stderr)
         self.assertFalse(os.path.lexists(self.app/"current"))
+    def test_persist_data_and_directory_entries_on_install(self):
+        from unittest import mock
+        import stat
+        spec=importlib.util.spec_from_file_location("linux_transactional_install", SCRIPT)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        calls=[]
+        original=os.fsync
+        def track(fd):
+            calls.append(stat.S_ISDIR(os.fstat(fd).st_mode))
+            return original(fd)
+        from argparse import Namespace
+        with mock.patch("os.fsync", side_effect=track):
+            result=module.install(Namespace(source=str(self.old),install_root=str(self.app),
+                        trusted_sandbox=str(TRUSTED),version="0.8.1",fault="None"))
+        self.assertEqual(result["status"],"PASS")
+        self.assertIn(True,calls,"No directory fsync on promotion")
+        self.assertIn(False,calls,"No regular file fsync in staged payload")
+    def test_promote_directory_fsync_failure_restores_old_pointer(self):
+        from unittest import mock
+        from argparse import Namespace
+        self.good(self.invoke(version="0.8.1"))
+        old=self.target()
+        spec=importlib.util.spec_from_file_location("linux_transactional_install",SCRIPT)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        original=os.fsync
+        def fault_when_new_visible(fd):
+            if (self.app/"current").is_symlink() and os.readlink(self.app/"current") != old:
+                raise OSError(5,"synthetic fsync failure after promotion")
+            return original(fd)
+        with mock.patch("os.fsync",side_effect=fault_when_new_visible):
+            with self.assertRaises(module.InstallError):
+                module.install(Namespace(source=str(self.new),install_root=str(self.app),
+                    trusted_sandbox=str(TRUSTED),version="0.8.2",fault="None"))
+        self.assertEqual(self.target(),old)
     def test_launcher_and_no_credential_access(self):
         self.good(self.invoke())
         launcher=self.app/"current"/"launch.sh"

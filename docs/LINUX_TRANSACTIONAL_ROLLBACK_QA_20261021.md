@@ -30,8 +30,14 @@ No `--no-sandbox` or browser extension fallback is provided.
   restores the previous `current`. Ambiguous markers, forged external
   rollback targets and incomplete first installs fail closed. This
   covers a process interruption at the simulated swap boundary, **not**
-  verified power-loss durability; parent-directory `fsync` and live
-  interruption testing remain separate acceptance requirements.
+  verified power-loss durability. File data and parent-directory `fsync`
+  now have passing unit/injected-failure tests; real power-cut persistence
+  and live process-kill interruption remain separate acceptance requirements.
+- Staged regular files are `fsync`ed before promotion, followed by child
+  directories (bottom-up) and the parent install directory after renames.
+  Directory-sync errors fail closed; injected post-promotion `fsync` failure
+  restores the previous link. Tests confirm file and directory sync calls,
+  but physical crash/power-loss behavior is not claimed.
 - Separate `launch.sh` verifies executable and root-owned SUID sandbox SHA
   and mode on every invocation; no profile/credentials are copied.
 - Key material, accounts, production routing, ChatGPT conversations and
@@ -39,7 +45,7 @@ No `--no-sandbox` or browser extension fallback is provided.
 
 ## Verified source QA
 Base browser Git commit: `10e5bc57ae4301b009df9736483c62c1ebad3695`.
-- Unit/negative tests: **15 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
+- Unit/negative tests: **17 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
 - Real offline CEF build payload (1.5 GiB): isolated staged install PASS;
   browser SHA256
   `4d3f2b6a5389a9a2f2ae82f1f09e940c47eb29cd2e7a88504473fdcb80e3e08d`;
@@ -61,5 +67,5 @@ action authorization, full rollback on installed target, and independent review.
 Do not enable automatic install, silently change production symlinks or promote
 release while these gates are open.
 
-References: https://theupdateframework.io/docs/metadata/ and
-https://theupdateframework.github.io/specification/v1.0.36/ .
+References: https://theupdateframework.io/docs/metadata/ , https://man7.org/linux/man-pages/man2/fsync.2.html , and
+https://github.com/theupdateframework/specification/blob/master/tuf-spec.md .
