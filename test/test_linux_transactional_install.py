@@ -121,6 +121,7 @@ class TestTransactionalLinux(unittest.TestCase):
         import fcntl
         self.app.mkdir()
         with (self.app / ".swap.lock").open("a+b") as handle:
+            (self.app / ".swap.lock").chmod(0o600)
             fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
             x=self.invoke()
             self.assertEqual(x.returncode,2)
