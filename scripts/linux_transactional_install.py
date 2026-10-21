@@ -91,6 +91,26 @@ def install(args):
         except BlockingIOError as exc:
             raise InstallError("CONCURRENT_INSTALL_LOCKED") from exc
         current = root / "current"
+        # Recover only a precisely identifiable interrupted old-pointer rename.
+        # A normal successful swap has no pending marker; ambiguous or forged
+        # markers fail closed instead of guessing which version is trusted.
+        if not os.path.lexists(current):
+            incomplete = sorted(root.glob("current.pending-*"))
+            if incomplete:
+                ensure(len(incomplete) == 1, "INTERRUPTED_SWAP_AMBIGUOUS")
+                pending_marker = incomplete[0]
+                suffix = pending_marker.name.removeprefix("current.pending-")
+                recovered = root / ("current.rollback-" + suffix)
+                ensure(pending_marker.is_symlink() and recovered.is_symlink(),
+                       "INTERRUPTED_SWAP_NO_RECOVERABLE_BASELINE")
+                pending_target = os.readlink(pending_marker)
+                old_target = os.readlink(recovered)
+                for target in (pending_target, old_target):
+                    ensure(target == Path(target).name and target.startswith("v") and
+                           (root / target).is_dir() and not (root / target).is_symlink() and
+                           (root / target).resolve().parent == root.resolve(),
+                           "INTERRUPTED_SWAP_INVALID_TARGET")
+                recovered.replace(current)
         previous = None
         if os.path.lexists(current):
             ensure(current.is_symlink(), "CURRENT_NOT_SYMLINK")
