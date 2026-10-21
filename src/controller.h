@@ -7,6 +7,7 @@
 
 #include "client.h"
 #include "commander_companion.h"
+#include "native_chat_observer.h"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/views/cef_box_layout.h"
@@ -61,6 +62,7 @@ class AppController {
   void OnBrowserClosed(CefRefPtr<CefBrowser> browser);
   void OnTitleChange(CefRefPtr<CefBrowser> browser, const std::string& title);
   void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool is_loading);
+  void OnNativeAddressChange(CefRefPtr<CefBrowser> browser, const std::string& url);
 
   bool HandlePopupURL(const std::string& url);
   bool OpenExternal(const std::string& url);
@@ -133,6 +135,7 @@ class AppController {
   companion::Automation companion_automation_;
   companion::Observation companion_observation_;
   companion::NativeBinding companion_binding_;
+  rc_browser::NativeChatObserver native_chat_observer_;
   CefRefPtr<CefBoxLayout> window_layout_;
   CefRefPtr<CefBoxLayout> header_layout_;
   CefRefPtr<CefBoxLayout> tab_layout_;

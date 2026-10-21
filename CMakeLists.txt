@@ -20,6 +20,9 @@ if(CGWA_COMPANION_TESTS_ONLY)
   # Windows workflow builds the companion target explicitly; include the tab contract.
   add_dependencies(companion-contract-test tab-order-contract-test)
   add_test(NAME tab-order-contract COMMAND tab-order-contract-test)
+  add_executable(native-chat-observer-test src/native_chat_observer_test.cc)
+  target_compile_features(native-chat-observer-test PRIVATE cxx_std_17)
+  add_test(NAME native-chat-observer COMMAND native-chat-observer-test)
   return()
 endif()
 
