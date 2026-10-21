@@ -141,6 +141,15 @@ class TestTransactionalLinux(unittest.TestCase):
         self.assertEqual(bad.returncode,2)
         self.assertIn("LOCK_SYMLINK_REFUSED",bad.stderr)
         self.assertEqual(protected.read_text(),"never change")
+    def test_live_pointer_never_removed_prior_to_atomic_promotion(self):
+        source=SCRIPT.read_text()
+        self.assertIn("rollback.symlink_to(previous)", source)
+        self.assertNotIn("current.replace(rollback)", source)
+        self.good(self.invoke(version="0.8.1"))
+        old=self.target()
+        r=self.invoke(source=self.new,version="0.8.2",fault="AfterBaselineMove")
+        self.assertEqual(r.returncode,2)
+        self.assertEqual(self.target(),old)
     def test_interrupted_swap_recovery_with_unique_pending_marker(self):
         self.good(self.invoke(version="0.8.1"))
         old=self.target()

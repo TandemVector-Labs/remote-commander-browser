@@ -19,13 +19,14 @@ No `--no-sandbox` or browser extension fallback is provided.
 - Exclusive `flock`; restricted-owner install directory; refuses unknown
   current pointers, arbitrary payload symlinks, traversal/malformed versions
   and same-version overwrites.
-- Current is a local relative symlink, swapped with a pending link; prior
-  pointer preserved under `current.rollback-...`.
+- Current remains a valid local relative symlink throughout promotion:
+  prior target is first copied as `current.rollback-...`, then the staged
+  pending symlink atomically replaces `current` (no empty-current window).
+  On failure, the previous alias atomically replaces `current` again.
 - Fault injection is restricted to the explicitly named test fixture root.
   Both interruption positions restore the original current symlink.
 - Restart-time recovery now recognizes a uniquely paired `current.pending-*`/
-  `current.rollback-*` marker after interruption between the two rename
-  operations, validates both target versions as local directories, and
+  `current.rollback-*` marker from the legacy two-rename sequence, validates both target versions as local directories, and
   restores the previous `current`. Ambiguous markers, forged external
   rollback targets and incomplete first installs fail closed. This
   covers a process interruption at the simulated swap boundary, **not**
@@ -38,7 +39,7 @@ No `--no-sandbox` or browser extension fallback is provided.
 
 ## Verified source QA
 Base browser Git commit: `10e5bc57ae4301b009df9736483c62c1ebad3695`.
-- Unit/negative tests: **14 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
+- Unit/negative tests: **15 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
 - Real offline CEF build payload (1.5 GiB): isolated staged install PASS;
   browser SHA256
   `4d3f2b6a5389a9a2f2ae82f1f09e940c47eb29cd2e7a88504473fdcb80e3e08d`;

@@ -168,7 +168,9 @@ def install(args):
         moved = False
         try:
             if previous:
-                current.replace(rollback)
+                # Preserve the previous pointer as a separate validated alias;
+                # never remove the live current link before the atomic replacement.
+                rollback.symlink_to(previous)
                 moved = True
             if args.fault == "AfterBaselineMove":
                 raise InstallError("QA_FAULT_AFTER_BASELINE_MOVE")
