@@ -22,7 +22,10 @@ No `--no-sandbox` or browser extension fallback is provided.
 - Current remains a valid local relative symlink throughout promotion:
   prior target is first copied as `current.rollback-...`, then the staged
   pending symlink atomically replaces `current` (no empty-current window).
-  On failure, the previous alias atomically replaces `current` again.
+  On failure, the previous alias atomically replaces `current` again,
+  without first moving the failed candidate pointer away. The injected
+  post-promotion failure test asserts that a valid `current` exists
+  immediately before rollback begins, closing the prior error-path gap.
 - Fault injection is restricted to the explicitly named test fixture root.
   Both interruption positions restore the original current symlink.
 - Restart-time recovery now recognizes a uniquely paired `current.pending-*`/
@@ -50,7 +53,7 @@ No `--no-sandbox` or browser extension fallback is provided.
 
 ## Verified source QA
 Base browser Git commit: `10e5bc57ae4301b009df9736483c62c1ebad3695`.
-- Unit/negative tests: **19 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
+- Unit/negative tests: **20 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
 - Real offline CEF build payload (1.5 GiB): isolated staged install PASS;
   browser SHA256
   `4d3f2b6a5389a9a2f2ae82f1f09e940c47eb29cd2e7a88504473fdcb80e3e08d`;

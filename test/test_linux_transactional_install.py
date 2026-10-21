@@ -279,6 +279,29 @@ raise SystemExit(99)
                 os.close(fd)
             self.assertEqual(self.target(),original)
 
+    def test_runtime_failure_rollback_never_exposes_missing_current(self):
+        from unittest import mock
+        from argparse import Namespace
+        self.good(self.invoke(version="0.8.1"))
+        original=self.target()
+        spec=importlib.util.spec_from_file_location("qa_installer",SCRIPT)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        observed=[]
+        real_replace=Path.replace
+        def instrument(self_,target):
+            if self_.name.startswith("current.rollback-") and Path(target).name=="current":
+                observed.append((self.app/"current").is_symlink())
+                observed.append(os.readlink(self.app/"current")!=original)
+            return real_replace(self_,target)
+        with mock.patch.object(Path,"replace",new=instrument):
+            with self.assertRaises(module.InstallError) as ctx:
+                module.install(Namespace(source=str(self.new),install_root=str(self.app),
+                    trusted_sandbox=str(TRUSTED),version="0.8.2",fault="AfterCandidateMove"))
+        self.assertIn("SWAP_ABORTED_AND_BASELINE_PRESERVED",str(ctx.exception))
+        self.assertEqual(observed,[True,True],"rollback replaced an absent or stale pointer")
+        self.assertEqual(self.target(),original)
+
     def test_forced_exit_before_pointer_swap_preserves_baseline(self):
         self.run_forced_exit_at_atomic_boundary("before")
 

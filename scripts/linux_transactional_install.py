@@ -214,10 +214,14 @@ def install(args):
             ensure(current.is_symlink() and os.readlink(current) == stem,
                    "CURRENT_PROMOTION_VERIFY_FAILED")
         except Exception as exc:
-            if os.path.lexists(current) and current.is_symlink() and os.readlink(current) == stem:
-                current.replace(failed)
             if moved:
+                # Rollback must be one atomic replacement as well. Never move
+                # current away first: that would expose a missing-current gap.
                 rollback.replace(current)
+                sync_dir(root)
+            elif os.path.lexists(current) and current.is_symlink() and os.readlink(current) == stem:
+                # Initial installation has no prior version to restore.
+                current.replace(failed)
                 sync_dir(root)
             ensure(previous is None or
                    (current.is_symlink() and os.readlink(current) == previous),
