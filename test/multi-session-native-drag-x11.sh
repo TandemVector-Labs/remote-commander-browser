@@ -102,7 +102,7 @@ wa="$(get_window a)"
 wb="$(get_window b)"
 echo "RMI_BOTH_NATIVE_WINDOWS_READY a=$wa b=$wb"
 drag(){
-  local id="$1" wid="$2" geometry x y sx tx sy
+  local id="$1" wid="$2" expected_order="${3:-swapped}" gate="${4:-}" geometry x y sx tx sy
   geometry="$(tool "$id" getwindowgeometry --shell "$wid")"
   x="$(awk -F= '$1=="X"{print $2}' <<< "$geometry")"
   y="$(awk -F= '$1=="Y"{print $2}' <<< "$geometry")"
@@ -110,6 +110,18 @@ drag(){
     { echo "RMI_WINDOW_GEOMETRY_INVALID_$id"; return 1; }
   sx=$((x+210)); tx=$((x+375)); sy=$((y+26))
   tool "$id" mousemove --sync "$sx" "$sy"
+  if [[ "$gate" == concurrent ]]; then
+    # Start both pointer gestures only after both private X11 displays are ready.
+    : > "$root/$id/concurrent-ready"
+    local both=0
+    for i in $(seq 1 100); do
+      if [[ -f "$root/a/concurrent-ready" && -f "$root/b/concurrent-ready" ]]; then
+        both=1; break
+      fi
+      sleep 0.05
+    done
+    [[ "$both" -eq 1 ]] || { echo "RMI_CONCURRENT_INPUT_BARRIER_TIMEOUT_$id"; return 1; }
+  fi
   sleep 0.1
   tool "$id" mousedown 1
   sleep 0.2
@@ -131,7 +143,11 @@ drag(){
   grep -q 'CGWA_NATIVE_TAB_DRAG_REORDER' "$root/$id/chrome.log" ||
     { echo "RMI_DRAG_MARKER_MISSING_$id"; return 1; }
   local expected actual
-  expected="$(printf 'https://chatgpt.com/?dual_%s=b\nhttps://chatgpt.com/?dual_%s=a' "$id" "$id")"
+  case "$expected_order" in
+    swapped) expected="$(printf 'https://chatgpt.com/?dual_%s=b\nhttps://chatgpt.com/?dual_%s=a' "$id" "$id")" ;;
+    original) expected="$(printf 'https://chatgpt.com/?dual_%s=a\nhttps://chatgpt.com/?dual_%s=b' "$id" "$id")" ;;
+    *) echo "RMI_BAD_EXPECTED_ORDER_$id"; return 1 ;;
+  esac
   actual="$(sed -n '2,3p' "$root/$id/profile/tabs.state")"
   [[ "$actual" == "$expected" ]] ||
     { echo "RMI_REORDER_FAILED_$id"; return 1; }
@@ -151,3 +167,23 @@ drag b "$wb"
 kill -0 "$ca"
 kill -0 "$cb"
 echo RMI_DUAL_POINTER_ISOLATION_PASS
+# A second real reorder is performed with both virtual pointer channels pressed
+# in parallel on different authenticated X servers. Unlike the first pair of
+# sequential cross-profile checks, this proves concurrent gestures can coexist.
+drag a "$wa" original concurrent &
+pa=$!
+drag b "$wb" original concurrent &
+pb=$!
+wait "$pa" || { echo RMI_CONCURRENT_DRAG_A_FAILED; exit 82; }
+wait "$pb" || { echo RMI_CONCURRENT_DRAG_B_FAILED; exit 83; }
+for id in a b; do
+  [[ $(grep -c 'CGWA_NATIVE_TAB_DRAG_REORDER' "$root/$id/chrome.log") -ge 2 ]] ||
+    { echo "RMI_CONCURRENT_SECOND_REORDER_MARKER_MISSING_$id"; exit 84; }
+done
+[[ "$(sha256sum "$root/a/profile/tabs.state"|cut -d' ' -f1)" == "$orig_a" ]] ||
+  { echo RMI_CONCURRENT_A_FINAL_STATE_CHANGED; exit 85; }
+[[ "$(sha256sum "$root/b/profile/tabs.state"|cut -d' ' -f1)" == "$orig_b" ]] ||
+  { echo RMI_CONCURRENT_B_FINAL_STATE_CHANGED; exit 86; }
+kill -0 "$ca"
+kill -0 "$cb"
+echo RMI_DUAL_CONCURRENT_POINTER_ISOLATION_PASS
