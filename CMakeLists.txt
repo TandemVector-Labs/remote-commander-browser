@@ -22,7 +22,10 @@ if(CGWA_COMPANION_TESTS_ONLY)
   target_compile_features(native-chat-observer-test PRIVATE cxx_std_17)
   add_test(NAME native-chat-observer COMMAND native-chat-observer-test)
   # CI on Windows builds only companion-contract-test: build every registered contract executable.
-  add_dependencies(companion-contract-test tab-order-contract-test native-chat-observer-test)
+  add_executable(native-session-state-test src/native_session_state_test.cc)
+  target_compile_features(native-session-state-test PRIVATE cxx_std_17)
+  add_test(NAME native-session-state COMMAND native-session-state-test)
+  add_dependencies(companion-contract-test tab-order-contract-test native-chat-observer-test native-session-state-test)
   return()
 endif()
 

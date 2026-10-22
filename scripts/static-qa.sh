@@ -40,10 +40,15 @@ if command -v cppcheck >/dev/null 2>&1; then
   trap 'rm -f "$out"' EXIT
   # Keep correctness-oriented checks fail-closed while suppressing three
   # cppcheck style-only diagnostics already present on exact v0.8.0 baseline.
+  cppcheck_exit=0
   cppcheck --enable=warning,style,performance,portability --std=c++17 --force \
     --suppress=missingIncludeSystem --suppress=unmatchedSuppression \
     --suppress=functionStatic --suppress=constParameterCallback --suppress=constVariablePointer \
-    --inline-suppr "$ROOT/src" 2>"$out" || true
+    --inline-suppr "$ROOT/src" 2>"$out" || cppcheck_exit=$?
+  if [[ "$cppcheck_exit" -ne 0 ]]; then
+    printf 'cppcheck execution failed (exit %s).\n' "$cppcheck_exit" >&2
+    status=1
+  fi
   if [[ -s "$out" ]]; then
     cat "$out" >&2
     status=1

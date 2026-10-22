@@ -28,6 +28,7 @@
 
 #include "client.h"
 #include "ui_chrome_layout.h"
+#include "native_session_state.h"
 #include "ui_tab_order.h"
 #include "ui_tab_drag.h"
 #include "include/views/cef_display.h"
@@ -450,24 +451,14 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   else
     window_->Activate();
 
-  // Restore simple URL session state. Each line is a URL. The first line may be
-  // "active=N". Never restore more than 8 tabs.
+  // Reopen at most the same 16 tabs the native UI can create. Keep the
+  // stored order and active index without silently losing tabs 9 through 16.
   std::ifstream in(StatePath());
-  std::vector<std::string> urls;
-  int active_index = 0;
-  std::string line;
-  if (in && std::getline(in, line) && StartsWith(line, "active=")) {
-    active_index = std::max(0, std::atoi(line.substr(7).c_str()));
-  } else if (!line.empty()) {
-    urls.push_back(line);
-  }
-  while (in && std::getline(in, line) && urls.size() < 8) {
-    if (StartsWith(line, "https://")) urls.push_back(line);
-  }
-  if (urls.empty()) urls.push_back("https://chatgpt.com/");
-  for (const auto& url : urls) NewTab(url);
-  if (active_index >= 0 && active_index < static_cast<int>(tabs_.size()))
-    SetActiveTabInternal(tabs_[active_index].id);
+  const auto session = rc_ui::ReadSessionState(in);
+  for (const auto& url : session.urls) NewTab(url);
+  if (session.active_index >= 0 &&
+      session.active_index < static_cast<int>(tabs_.size()))
+    SetActiveTabInternal(tabs_[session.active_index].id);
 
   if (command_line && command_line->HasSwitch("companion-self-test"))
     RunCompanionSelfTest();

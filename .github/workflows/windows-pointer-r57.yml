@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/install-windows.ps1'
       - 'test/windows-rollback-ci-r57.ps1'
+      - 'test/windows-shortcut-target-qa.ps1'
       - 'test/windows-pointer-static-r57.test.mjs'
       - '.github/workflows/windows-pointer-r57.yml'
   workflow_dispatch:
@@ -25,6 +26,9 @@ jobs:
           [Management.Automation.Language.Parser]::ParseFile(
             (Resolve-Path scripts/install-windows.ps1),[ref]$tokens,[ref]$errors)|Out-Null
           if($errors.Count -ne 0){throw 'INSTALLER_PARSE_FAILED'}
+      - name: Verify Start Menu shortcut destination contract (private fixtures only)
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -File test/windows-shortcut-target-qa.ps1
       - name: Synthetic Windows junction swap / rollback fault injection
         shell: pwsh
         run: pwsh -NoLogo -NoProfile -File test/windows-rollback-ci-r57.ps1
