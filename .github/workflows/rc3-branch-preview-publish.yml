@@ -169,11 +169,14 @@ jobs:
           notes="docs/RELEASE_$version.md"
           test -f "$notes"
           test -f "dist/release/Remote-Commander-Browser-Setup-v$version.exe"
-          python3 scripts/verify-release-assets.py "$version" dist/release
-          cd dist/release
-          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | LC_ALL=C sort | while read -r f; do sha256sum "$f"; done > SHA256SUMS.txt
-          sha256sum -c SHA256SUMS.txt
-          cd ../..
+          # Pre-attestation producer verifier already accepted the exact six-file layout.
+          # SHA256SUMS.txt is the seventh signed subject, so rerunning the six-file
+          # layout verifier here would reject its own newly created checksum file.
+          # Do not rewrite any signed byte after attestation. Verify the original
+          # signed checksum manifest and the expected seven-subject file count.
+          test -f dist/release/SHA256SUMS.txt
+          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 7
+          (cd dist/release && sha256sum -c SHA256SUMS.txt)
           # Release is fail closed if any immutable asset lacks signed provenance.
           verified=0
           while IFS= read -r -d '' artifact; do
