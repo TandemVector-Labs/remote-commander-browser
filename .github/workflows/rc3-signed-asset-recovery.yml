@@ -78,16 +78,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "RC3_RELEASE_TRACE_BEGIN current=$(git rev-parse HEAD) expected=$SOURCE_SHA files=$(find dist/release -maxdepth 1 -type f | wc -l)"
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo RC3_RELEASE_TRACE_SOURCE_OK
           test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 7
+          echo RC3_RELEASE_TRACE_ASSETS_OK
           (cd dist/release && sha256sum -c SHA256SUMS.txt)
+          echo RC3_RELEASE_TRACE_MANIFEST_OK
           tag=v0.8.3-rc.3
-          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null || true)"
+          lookup_code=0
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha' 2>/tmp/rc3_tag_lookup_error)" || lookup_code=$?
+          echo "RC3_TAG_LOOKUP code=$lookup_code result=${existing:-EMPTY}"
+          if test "$lookup_code" -ne 0; then
+            cat /tmp/rc3_tag_lookup_error >&2
+            if grep -Eq 'HTTP 404|Not Found' /tmp/rc3_tag_lookup_error; then
+              existing=""
+            else
+              echo RC3_TAG_LOOKUP_FAIL_CLOSED >&2
+              exit 61
+            fi
+          fi
           if test -z "$existing"; then
+            echo RC3_TAG_CREATE_ATTEMPT
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$SOURCE_SHA" >/dev/null
+            echo RC3_TAG_CREATE_RESPONSE_OK
             existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')"
           fi
+          echo "RC3_TAG_FINAL_SHA=$existing"
           test "$existing" = "$SOURCE_SHA"
+          echo RC3_TAG_SHA_MATCH
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo EXISTING_RELEASE_REQUIRES_RECONCILE >&2
             exit 52
