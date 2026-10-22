@@ -18,8 +18,9 @@ int main() {
   NativeChatObserver same_conversation;
   same_conversation.Observe(7, "https://chatgpt.com/c/"+LOWER);
   same_conversation.Observe(8, "https://chatgpt.com/c/"+UPPER);
-  assert(same_conversation.Snapshot().open_tabs == 2);
-  assert(same_conversation.Snapshot().conversations == 1);
+  const auto deduplicated = same_conversation.Snapshot();
+  assert(deduplicated.open_tabs == 2);
+  assert(deduplicated.conversations == 1);
 
   for(const auto& bad:{"https://chatgpt.com.evil.test/c/","http://chatgpt.com/c/","https://user@chatgpt.com/c/","https://chatgpt.com:443/c/"}) {
     assert(CanonicalChatId(std::string(bad)+A).empty());
