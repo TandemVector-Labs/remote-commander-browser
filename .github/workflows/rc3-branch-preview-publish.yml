@@ -1,0 +1,216 @@
+name: RC3 isolated prerelease publish
+
+on:
+  push:
+    branches: ['release/browser-v0.8.3-rc.3-20261023']
+
+permissions:
+  contents: read
+
+jobs:
+  release-contract:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify release integrity contracts
+        run: python scripts/test-release-integrity.py
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify release version
+        shell: pwsh
+        run: |
+          $version=(Get-Content VERSION -Raw).Trim()
+          if(-not $version){ throw 'VERSION missing' }
+          if($version -ne '0.8.3-rc.3' -or '${{ github.ref_name }}' -ne 'release/browser-v0.8.3-rc.3-20261023'){ throw 'RC3_BRANCH_OR_VERSION_INVALID' }
+      - name: Install verified pinned Inno Setup
+        shell: pwsh
+        run: |
+          ./scripts/install-inno-setup.ps1
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+      - name: Build Windows native payload
+        shell: pwsh
+        run: |
+          ./scripts/build-windows.ps1
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+      - name: Package and stage exact Windows release assets
+        shell: pwsh
+        run: |
+          ./scripts/package-windows.ps1
+          ./scripts/build-windows-installer.ps1
+          $version=(Get-Content VERSION -Raw).Trim()
+          $setup="dist/installer/Remote-Commander-Browser-Setup-v$version.exe"
+          if(-not(Test-Path -LiteralPath $setup -PathType Leaf)){ throw 'Setup missing' }
+          $setupName="Remote-Commander-Browser-Setup-v$version.exe"
+          $setupSumName="SHA256SUMS-setup-v$version.txt"
+          $zipName="remote-commander-browser-v$version-windows-x86_64.zip"
+          $zipSumName="SHA256SUMS-windows-v$version.txt"
+          $setupHash=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$setupHash  $setupName" | Set-Content "dist/$setupSumName" -Encoding ascii
+          $stage='dist/release-windows'
+          Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          foreach($name in @($zipName,$zipSumName,$setupSumName)){
+            $src=Join-Path 'dist' $name
+            if(-not(Test-Path -LiteralPath $src -PathType Leaf)){ throw "Release asset missing: $name" }
+            Copy-Item -LiteralPath $src -Destination (Join-Path $stage $name)
+          }
+          Copy-Item -LiteralPath $setup -Destination (Join-Path $stage $setupName)
+          $expected=@($setupName,$setupSumName,$zipName,$zipSumName)|Sort-Object
+          $actual=@(Get-ChildItem -LiteralPath $stage -File|ForEach-Object Name|Sort-Object)
+          if($actual.Count-ne4 -or (Compare-Object $expected $actual)){ throw "WINDOWS_RELEASE_STAGE_INVALID actual=$($actual -join ',')" }
+          Write-Output "WINDOWS_RELEASE_STAGE_PASS count=4 setupSha256=$setupHash"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-release-windows
+          path: dist/release-windows/
+          if-no-files-found: error
+          compression-level: 0
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          test -n "$version"
+          test "$version" = "0.8.3-rc.3"
+          test "$GITHUB_REF_NAME" = "release/browser-v0.8.3-rc.3-20261023"
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build curl bzip2 cppcheck libgtk-3-dev libnss3-dev libx11-dev libxcomposite-dev libxdamage-dev libxext-dev libxfixes-dev libxrandr-dev libgbm-dev libpango1.0-dev libcups2-dev libdrm-dev libasound2-dev fonts-vazirmatn xvfb xauth
+      - name: Build and package Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/static-qa.sh
+          ./scripts/fetch-cef.sh
+          ./scripts/build-release.sh
+          sandbox="$(realpath build/bin/chrome-sandbox)"
+          sudo chown root:root "$sandbox"
+          sudo chmod 4755 "$sandbox"
+          ./scripts/package-release.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-release-linux
+          path: |
+            dist/remote-commander-browser-v*-linux-x86_64.tar.gz
+            dist/remote-commander-browser-v*-linux-x86_64.tar.gz.sha256
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/release/browser-v0.8.3-rc.3-20261023'
+    needs: [windows, linux, release-contract]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: browser-release-*
+          path: dist/release
+          merge-multiple: true
+      - name: R256 verify all staged Browser release assets before Sigstore
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          tag="v$version"
+          test "$version" = "0.8.3-rc.3"
+          test "$GITHUB_REF_NAME" = "release/browser-v0.8.3-rc.3-20261023"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f "docs/RELEASE_$version.md"
+          test -f "dist/release/Remote-Commander-Browser-Setup-v$version.exe"
+          python3 scripts/verify-release-assets.py "$version" dist/release
+          cd dist/release
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | LC_ALL=C sort | while read -r f; do sha256sum "$f"; done > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          echo R256_RELEASE_PREATTEST_INTEGRITY_PASS
+      - name: R256 sign verified release assets with GitHub Sigstore provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # official v4
+        with:
+          subject-path: 'dist/release/*'
+      - name: Verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          tag="v$version"
+          test "$version" = "0.8.3-rc.3"
+          test "$GITHUB_REF_NAME" = "release/browser-v0.8.3-rc.3-20261023"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          notes="docs/RELEASE_$version.md"
+          test -f "$notes"
+          test -f "dist/release/Remote-Commander-Browser-Setup-v$version.exe"
+          # Pre-attestation producer verifier already accepted the exact six-file layout.
+          # SHA256SUMS.txt is the seventh signed subject, so rerunning the six-file
+          # layout verifier here would reject its own newly created checksum file.
+          # Do not rewrite any signed byte after attestation. Verify the original
+          # signed checksum manifest and the expected seven-subject file count.
+          test -f dist/release/SHA256SUMS.txt
+          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 7
+          (cd dist/release && sha256sum -c SHA256SUMS.txt)
+          # Release is fail closed if any immutable asset lacks signed provenance.
+          verified=0
+          while IFS= read -r -d '' artifact; do
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" >/dev/null
+            verified=$((verified+1))
+          done < <(find dist/release -maxdepth 1 -type f -print0)
+          test "$verified" -eq 7
+          # GitHub Actions creates only a voluntary RC tag here, after producer hashes
+          # and all seven independent Sigstore attestations have been verified.
+          # GitHub GITHUB_TOKEN tag pushes do not retrigger the tagged release workflow.
+          test "$GITHUB_REF_NAME" = "release/browser-v0.8.3-rc.3-20261023"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -z "$tag_sha" ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
+            tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')"
+          fi
+          test "$tag_sha" = "$GITHUB_SHA"
+          echo "RC3_OPTIONAL_TAG_VERIFIED sha=$tag_sha"
+          echo "R256_RELEASE_SIGNED_ATTESTATION_PASS subjects=$verified"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "RELEASE_ALREADY_EXISTS_RECONCILE $tag" >&2
+            exit 1
+          fi
+          mapfile -t assets < <(find dist/release -maxdepth 1 -type f -printf '%p\n' | LC_ALL=C sort)
+          release_flags=(--latest)
+          expected_prerelease=false
+          if [[ "$version" == *-* ]]; then
+            release_flags=(--prerelease --latest=false)
+            expected_prerelease=true
+          fi
+          gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Remote Commander Browser $tag" --notes-file "$notes" "${release_flags[@]}"
+          immutable="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.immutable')"
+          actual_prerelease="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.prerelease')"
+          test "$immutable" = true
+          test "$actual_prerelease" = "$expected_prerelease"
+          echo "RELEASE_METADATA_VERIFIED immutable=true prerelease=$actual_prerelease"

@@ -1,0 +1,119 @@
+name: RC3 signed asset recovery
+on:
+  push:
+    branches: ['release/browser-v0.8.3-rc.3-20261023']
+    paths:
+      - '.github/workflows/rc3-signed-asset-recovery.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/release/browser-v0.8.3-rc.3-20261023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 2ee1288784bae2b4be219d4f9329c7ac443d9b59
+      SRC_RUN: '39860960555'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2ee1288784bae2b4be219d4f9329c7ac443d9b59
+      - name: Download prior signed-producer output
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39860960555
+          github-token: ${{ github.token }}
+          pattern: browser-release-*
+          merge-multiple: true
+          path: dist/release
+
+      - name: Verify producer SHA and six release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(tr -d '[:space:]' < VERSION)" = '0.8.3-rc.3'
+          prior="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SRC_RUN" --jq '.head_sha')"
+          test "$prior" = "$SOURCE_SHA"
+          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 6
+          python3 scripts/verify-release-assets.py 0.8.3-rc.3 dist/release
+          cd dist/release
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | LC_ALL=C sort | while read -r f; do sha256sum "$f"; done > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 7
+          echo RC3_EXACT_SOURCE_AND_SHA256_PASS
+
+      - name: Diagnose and verify all seven Sigstore signed subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' asset; do
+            echo "VERIFY_SUBJECT=$(basename "$asset")"
+            good=false
+            for attempt in 1 2 3; do
+              if gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY" --source-digest "$SOURCE_SHA"; then
+                good=true
+                break
+              fi
+              echo "RETRY_ATTESTATION_$attempt" >&2
+              sleep 10
+            done
+            if test "$good" != true; then
+              echo "ATTESTATION_UNVERIFIED_FAIL_CLOSED=$(basename "$asset")" >&2
+              exit 51
+            fi
+            count=$((count+1))
+          done < <(find dist/release -maxdepth 1 -type f -print0)
+          test "$count" -eq 7
+          echo RC3_SIGNED_SEVEN_VERIFIED
+
+      - name: Tag producer and create immutable opt-in prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "RC3_RELEASE_TRACE_BEGIN current=$(git rev-parse HEAD) expected=$SOURCE_SHA files=$(find dist/release -maxdepth 1 -type f | wc -l)"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo RC3_RELEASE_TRACE_SOURCE_OK
+          test "$(find dist/release -maxdepth 1 -type f | wc -l)" -eq 7
+          echo RC3_RELEASE_TRACE_ASSETS_OK
+          (cd dist/release && sha256sum -c SHA256SUMS.txt)
+          echo RC3_RELEASE_TRACE_MANIFEST_OK
+          tag=v0.8.3-rc.3
+          lookup_code=0
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha' 2>/tmp/rc3_tag_lookup_error)" || lookup_code=$?
+          echo "RC3_TAG_LOOKUP code=$lookup_code result=${existing:-EMPTY}"
+          if test "$lookup_code" -ne 0; then
+            cat /tmp/rc3_tag_lookup_error >&2
+            if grep -Eq 'HTTP 404|Not Found' /tmp/rc3_tag_lookup_error; then
+              existing=""
+            else
+              echo RC3_TAG_LOOKUP_FAIL_CLOSED >&2
+              exit 61
+            fi
+          fi
+          if test -z "$existing"; then
+            echo RC3_TAG_CREATE_ATTEMPT
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$SOURCE_SHA" >/dev/null
+            echo RC3_TAG_CREATE_RESPONSE_OK
+            existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')"
+          fi
+          echo "RC3_TAG_FINAL_SHA=$existing"
+          test "$existing" = "$SOURCE_SHA"
+          echo RC3_TAG_SHA_MATCH
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo EXISTING_RELEASE_REQUIRES_RECONCILE >&2
+            exit 52
+          fi
+          mapfile -t assets < <(find dist/release -maxdepth 1 -type f -printf '%p\n' | LC_ALL=C sort)
+          gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Remote Commander Browser $tag" --notes-file docs/RELEASE_0.8.3-rc.3.md --prerelease --latest=false
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.immutable')" = true
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.prerelease')" = true
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')" = "$SOURCE_SHA"
+          echo RECOVERED_SIGNED_IMMUTABLE_RC3_RELEASE_PUBLISHED
