@@ -1,6 +1,7 @@
 #pragma once
 // Remote Commander Browser native tab observer. In-process, ephemeral, read-only.
 // No Brave extension, Native Messaging, network, cookies, DOM or action bridge.
+#include <algorithm>
 #include <map>
 #include <regex>
 #include <set>
@@ -20,7 +21,13 @@ inline std::string CanonicalChatId(const std::string& url) {
   static const std::regex re(
       R"(^https://(?:chatgpt\.com|chat\.openai\.com)/(?:g/[^/?#]{1,120}/)?c/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/?(?:[?#].*)?$)");
   std::smatch match;
-  return std::regex_match(url, match, re) ? match[1].str() : std::string();
+  if (!std::regex_match(url, match, re)) return {};
+  std::string id = match[1].str();
+  // UUID hex digits are case-insensitive; normalize before deduplication.
+  std::transform(id.begin(), id.end(), id.begin(), [](char ch) {
+    return ch >= 'A' && ch <= 'F' ? static_cast<char>(ch - 'A' + 'a') : ch;
+  });
+  return id;
 }
 class NativeChatObserver {
  public:
