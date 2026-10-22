@@ -1,5 +1,9 @@
 #include "native_chat_observer.h"
 #include "ui_chrome_layout.h"
+// Force runtime checks even in CMake Release builds that define NDEBUG.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <iostream>
 int main() {
@@ -8,6 +12,15 @@ int main() {
   const std::string B="22222222-2222-4222-8222-222222222222";
   assert(CanonicalChatId("https://chatgpt.com/c/"+A)==A);
   assert(CanonicalChatId("https://chatgpt.com/g/group/c/"+B+"?ref=hidden")==B);
+  const std::string LOWER = "abcdefab-cdef-4abc-8abc-abcdefabcdef";
+  const std::string UPPER = "ABCDEFAB-CDEF-4ABC-8ABC-ABCDEFABCDEF";
+  assert(CanonicalChatId("https://chatgpt.com/c/"+UPPER) == LOWER);
+  NativeChatObserver same_conversation;
+  same_conversation.Observe(7, "https://chatgpt.com/c/"+LOWER);
+  same_conversation.Observe(8, "https://chatgpt.com/c/"+UPPER);
+  assert(same_conversation.Snapshot().open_tabs == 2);
+  assert(same_conversation.Snapshot().conversations == 1);
+
   for(const auto& bad:{"https://chatgpt.com.evil.test/c/","http://chatgpt.com/c/","https://user@chatgpt.com/c/","https://chatgpt.com:443/c/"}) {
     assert(CanonicalChatId(std::string(bad)+A).empty());
   }
