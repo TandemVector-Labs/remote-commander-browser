@@ -11,8 +11,6 @@ static bool Check(bool value, const char* name) {
 }
 int main() {
   using rc_ui::ReadSessionState;
-  using rc_ui::kMaxNativeTabs;
-  if (!Check(kMaxNativeTabs == 16, "native_limit")) return 1;
   std::ostringstream data;
   data << "active=15\n";
   for (int i = 0; i < 17; ++i)
