@@ -9,6 +9,26 @@ param(
   [string]$TestFailurePoint = 'None'
 )
 $ErrorActionPreference='Stop'
+
+function Assert-BrowserPublicInstallContext {
+  param([string]$IdentitySid,[string]$ProfilePath,[string]$RoamingAppData,[string]$LocalAppData)
+  if($IdentitySid -eq 'S-1-5-18'){throw 'BROWSER_PUBLIC_INSTALL_SYSTEM_CONTEXT'}
+  if([string]::IsNullOrWhiteSpace($IdentitySid) -or [string]::IsNullOrWhiteSpace($ProfilePath) -or
+     [string]::IsNullOrWhiteSpace($RoamingAppData) -or [string]::IsNullOrWhiteSpace($LocalAppData)){
+    throw 'BROWSER_PUBLIC_INSTALL_IDENTITY_INCOMPLETE'
+  }
+  foreach($path in @($ProfilePath,$RoamingAppData,$LocalAppData)){
+    if($path -match '(?i)(^|[\\/])systemprofile([\\/]|$)'){
+      throw 'BROWSER_PUBLIC_INSTALL_SYSTEMPROFILE_PATH'
+    }
+  }
+}
+
+if(-not $NoPublicIntegration){
+  $CurrentWindowsIdentity=[Security.Principal.WindowsIdentity]::GetCurrent()
+  Assert-BrowserPublicInstallContext -IdentitySid $CurrentWindowsIdentity.User.Value -ProfilePath $env:USERPROFILE -RoamingAppData $env:APPDATA -LocalAppData $env:LOCALAPPDATA
+}
+
 Set-StrictMode -Version Latest
 
 $RepoRoot=$null
@@ -252,15 +272,45 @@ try{
   throw ('BROWSER_SWAP_ABORTED_AND_BASELINE_PRESERVED: '+$originalError)
 }
 
+function Assert-BrowserStartMenuShortcut {
+  param(
+    [string]$Path,
+    [string]$ExpectedTarget,
+    [string]$ExpectedWorkingDirectory,
+    [string]$ExpectedIcon,
+    [object]$Shell
+  )
+  if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){throw 'BROWSER_SHORTCUT_MISSING'}
+  if(-not(Test-Path -LiteralPath $ExpectedTarget -PathType Leaf)){throw 'BROWSER_SHORTCUT_EXE_MISSING'}
+  $actual=$Shell.CreateShortcut($Path)
+  $expected=[IO.Path]::GetFullPath($ExpectedTarget)
+  if(-not $actual.TargetPath -or
+     -not [string]::Equals([IO.Path]::GetFullPath($actual.TargetPath),$expected,[StringComparison]::OrdinalIgnoreCase)){
+    throw 'BROWSER_SHORTCUT_TARGET_MISMATCH'
+  }
+  if(-not(Test-Path -LiteralPath $actual.TargetPath -PathType Leaf)){throw 'BROWSER_SHORTCUT_TARGET_MISSING'}
+  if(-not [string]::Equals($actual.WorkingDirectory,$ExpectedWorkingDirectory,[StringComparison]::OrdinalIgnoreCase)){
+    throw 'BROWSER_SHORTCUT_WORKDIR_MISMATCH'
+  }
+  if(-not [string]::Equals($actual.IconLocation,$ExpectedIcon,[StringComparison]::OrdinalIgnoreCase)){
+    throw 'BROWSER_SHORTCUT_ICON_MISMATCH'
+  }
+  if($actual.Arguments){throw 'BROWSER_SHORTCUT_UNEXPECTED_ARGUMENTS'}
+}
+
 if(-not $NoPublicIntegration){
   New-Item -ItemType Directory -Force -Path $StartMenu | Out-Null
   $Wsh=New-Object -ComObject WScript.Shell
-  $Shortcut=$Wsh.CreateShortcut((Join-Path $StartMenu 'Remote Commander Browser.lnk'))
-  $Shortcut.TargetPath=Join-Path $Current 'chatgpt-cef-v2.exe'
+  $TargetExe=Join-Path $Current 'chatgpt-cef-v2.exe'
+  $TargetIcon=$TargetExe+',0'
+  $ShortcutPath=Join-Path $StartMenu 'Remote Commander Browser.lnk'
+  $Shortcut=$Wsh.CreateShortcut($ShortcutPath)
+  $Shortcut.TargetPath=$TargetExe
   $Shortcut.WorkingDirectory=$Current
-  $Shortcut.IconLocation=(Join-Path $Current 'chatgpt-cef-v2.exe')+',0'
+  $Shortcut.IconLocation=$TargetIcon
   $Shortcut.Description='Remote Commander Browser'
   $Shortcut.Save()
+  Assert-BrowserStartMenuShortcut $ShortcutPath $TargetExe $Current $TargetIcon $Wsh
 
   $Uninstall=Join-Path $InstallRoot 'uninstall.ps1'
   $UninstallText=@"
@@ -283,8 +333,8 @@ Start-Process -FilePath 'cmd.exe' -ArgumentList '/d','/c',"timeout /t 1 /nobreak
   New-ItemProperty -Path $Reg -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
   New-ItemProperty -Path $Reg -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
 
-  $Check=Join-Path $StartMenu 'Remote Commander Browser.lnk'
-  if(-not (Test-Path -LiteralPath $Check -PathType Leaf)){throw 'Browser Start Menu shortcut was not created'}
+  # Re-open after registry writes: existence of the .lnk is not launchability.
+  Assert-BrowserStartMenuShortcut $ShortcutPath $TargetExe $Current $TargetIcon $Wsh
 }
 
 Write-Output "REMOTE_COMMANDER_BROWSER_INSTALL_PASS version=$Version package=$($PackageSha.Substring(0,12)) install=$InstallRoot companion=$CompanionRoot public=$(-not $NoPublicIntegration)"
