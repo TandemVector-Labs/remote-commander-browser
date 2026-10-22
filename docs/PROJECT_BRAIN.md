@@ -1,3 +1,15 @@
+# Project Brain — Remote Commander Browser
+
+## CURRENT — 2026-10-22: source/release inventory and owner acceptance boundary
+
+- **Current repository identity:** [TandemVector-Labs/remote-commander-browser](https://github.com/TandemVector-Labs/remote-commander-browser), GitHub repository ID `1399865521`; earlier `Usefull-Skills/remote-commander-browser` and `Usefull-Skills/chatgpt-cef-linux` paths resolve to this repository ID. The original aliases are history, not new independent products. Parent/owner project uses [Core source](https://github.com/GOD13emad/ChatGPTRemoteCommander); the separate organization Core repository is a development fork, not this Browser's authoritative release.
+- **Immutable released product:** Published Browser Stable `v0.8.1` (2026-10-07, seven release assets). Development `main` at `d04ae5b5b0129b7c2b199ee99a22bda6709edf66` (2026-10-12) includes later source changes and is **not** a new released build; `v0.8.2` material is a candidate, not stable. Browser cannot acquire Commander command authority merely through status/monitoring.
+- **Scoped independent source inventory:** `d04ae5b5b0129b7c2b199ee99a22bda6709edf66` was cloned into a separate clean audit directory and all 107 Git-tracked files read/hash-inventoried, 0 missing, total 708584 bytes, ordered path/content SHA-256 `14d2059e416dbd0c8fb90c4e760b29bc693d175404a0256e6c1e63c1fc9140a9`; Git tree `c2b4de9f73354bb5ab9c86a42253c889fbd421e8`. Local `scripts/static-qa.sh` completed `STATIC_QA=PASS` including available cppcheck on 9 C++ units and source privacy/sandbox guards. Source-only Chrome tests `test/ui_chrome_source.test.cjs` and `test/ui_chrome_theme.test.cjs`: 14/14 PASS, 0 failures, on that exact main tree. This does **not** certify CEF native runtime, live login, multimedia, Windows/Linux deployment, or four-host rollback.
+- **Open technical gates:** independent native GUI/session acceptance, safety and sandbox verification on actual installation, Windows/Linux installer and rollback, exact-source security PR reviews (including open Browser PRs #127-#130), provenance, and coordinated Core/Browser Control Center integration. Source-only or isolated PASS cannot be silently promoted. No executable, profile, API key, credential or installed service was modified in this document audit.
+- **Historical continuity:** the archived dated chronology below remains unchanged and may contain obsolete `CURRENT` labels or legacy serialization markers; it is NOT live release/QA authority. Preserve accepted evidence; do not re-create a parallel versioned Brain.
+
+---
+
 System.Object[]
 
 
