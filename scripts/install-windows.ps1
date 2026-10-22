@@ -9,6 +9,26 @@ param(
   [string]$TestFailurePoint = 'None'
 )
 $ErrorActionPreference='Stop'
+
+function Assert-BrowserPublicInstallContext {
+  param([string]$IdentitySid,[string]$ProfilePath,[string]$RoamingAppData,[string]$LocalAppData)
+  if($IdentitySid -eq 'S-1-5-18'){throw 'BROWSER_PUBLIC_INSTALL_SYSTEM_CONTEXT'}
+  if([string]::IsNullOrWhiteSpace($IdentitySid) -or [string]::IsNullOrWhiteSpace($ProfilePath) -or
+     [string]::IsNullOrWhiteSpace($RoamingAppData) -or [string]::IsNullOrWhiteSpace($LocalAppData)){
+    throw 'BROWSER_PUBLIC_INSTALL_IDENTITY_INCOMPLETE'
+  }
+  foreach($path in @($ProfilePath,$RoamingAppData,$LocalAppData)){
+    if($path -match '(?i)(^|[\\/])systemprofile([\\/]|$)'){
+      throw 'BROWSER_PUBLIC_INSTALL_SYSTEMPROFILE_PATH'
+    }
+  }
+}
+
+if(-not $NoPublicIntegration){
+  $CurrentWindowsIdentity=[Security.Principal.WindowsIdentity]::GetCurrent()
+  Assert-BrowserPublicInstallContext -IdentitySid $CurrentWindowsIdentity.User.Value -ProfilePath $env:USERPROFILE -RoamingAppData $env:APPDATA -LocalAppData $env:LOCALAPPDATA
+}
+
 Set-StrictMode -Version Latest
 
 $RepoRoot=$null
