@@ -193,10 +193,18 @@ class ReleaseIntegrityTests(unittest.TestCase):
             workflow.index("python3 scripts/verify-release-assets.py"),
             workflow.index(" > SHA256SUMS.txt"),
         )
-        self.assertIn("release_flags=(--latest)", workflow)
-        self.assertIn("release_flags=(--prerelease --latest=false)", workflow)
+        self.assertIn("release_flags=(--draft)", workflow)
+        self.assertIn("release_flags=(--draft --prerelease)", workflow)
         self.assertIn('RELEASE_ALREADY_EXISTS_RECONCILE', workflow)
-        self.assertIn('test "$immutable" = true', workflow)
+        self.assertIn('test "$actual_draft" = true', workflow)
+        self.assertIn('RELEASE_DRAFT_STAGED ownerAcceptance=pending', workflow)
+        # The tag build may stage signed assets but must never publish Stable.
+        publish = workflow.split("\n  publish:\n", 1)[1]
+        self.assertNotIn("release_flags=(--latest)", publish)
+        self.assertNotIn("release_flags=(--prerelease --latest=false)", publish)
+        self.assertNotIn("gh release edit", publish)
+        self.assertNotIn("--draft=false", publish)
+        self.assertLess(publish.index("gh attestation verify"), publish.index("gh release create"))
         self.assertIn('needs: [windows, linux, release-contract]', workflow)
         stage = workflow.split("Package and stage exact Windows release assets", 1)[1].split(
             "      - uses:", 1

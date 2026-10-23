@@ -202,15 +202,18 @@ jobs:
             exit 1
           fi
           mapfile -t assets < <(find dist/release -maxdepth 1 -type f -printf '%p\n' | LC_ALL=C sort)
-          release_flags=(--latest)
+          # Tagging must not silently publish Stable before signed-in owner
+          # acceptance and independent review. Stage the attested package as
+          # Draft only; publication is a separate owner-controlled transition.
+          release_flags=(--draft)
           expected_prerelease=false
           if [[ "$version" == *-* ]]; then
-            release_flags=(--prerelease --latest=false)
+            release_flags=(--draft --prerelease)
             expected_prerelease=true
           fi
           gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Remote Commander Browser $tag" --notes-file "$notes" "${release_flags[@]}"
-          immutable="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.immutable')"
+          actual_draft="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.draft')"
           actual_prerelease="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.prerelease')"
-          test "$immutable" = true
+          test "$actual_draft" = true
           test "$actual_prerelease" = "$expected_prerelease"
-          echo "RELEASE_METADATA_VERIFIED immutable=true prerelease=$actual_prerelease"
+          echo "RELEASE_DRAFT_STAGED ownerAcceptance=pending prerelease=$actual_prerelease assets=${#assets[@]}"
