@@ -20,7 +20,8 @@ jobs:
       - name: Verify preview version
         shell: pwsh
         run: |
-          if((Get-Content VERSION -Raw).Trim() -ne '0.8.3-rc.3'){ throw 'VERSION mismatch' }
+          $version=(Get-Content VERSION -Raw).Trim()
+          if($version -notmatch '^\d+\.\d+\.\d+$'){ throw 'VERSION must be stable x.y.z' }
 
       - name: Companion contract tests (CEF-free)
         shell: pwsh
@@ -190,7 +191,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $setup=(Resolve-Path 'dist/installer/Remote-Commander-Browser-Setup-v0.8.3-rc.3.exe').Path
+          $version=(Get-Content VERSION -Raw).Trim()
+          $setup=(Resolve-Path "dist/installer/Remote-Commander-Browser-Setup-v$version.exe").Path
           $root=Join-Path $env:RUNNER_TEMP 'rc-browser-setup-qa'
           $install=Join-Path $root 'browser'
           $companion=Join-Path $root 'companion'
@@ -214,17 +216,17 @@ jobs:
           if(-not(Test-Path $exe -PathType Leaf)){ throw 'BROWSER_SETUP_EXE_MISSING' }
           if(-not(Test-Path $record -PathType Leaf)){ throw 'BROWSER_SETUP_RECORD_MISSING' }
           $json=Get-Content $record -Raw|ConvertFrom-Json
-          if($json.version -ne '0.8.3-rc.3' -or $json.publicIntegration -ne $false){ throw 'BROWSER_SETUP_RECORD_INVALID' }
+          if($json.version -ne $version -or $json.publicIntegration -ne $false){ throw 'BROWSER_SETUP_RECORD_INVALID' }
           $acl=Get-Acl $companion
           if(-not$acl.AreAccessRulesProtected){ throw 'BROWSER_SETUP_COMPANION_ACL_INVALID' }
           Write-Output 'BROWSER_SETUP_ISOLATED_PASS'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-commander-browser-v0.8.3-rc.3-windows-x86_64
+          name: remote-commander-browser-windows-x86_64
           path: |
-            dist/remote-commander-browser-v0.8.3-rc.3-windows-x86_64.zip
-            dist/SHA256SUMS-windows-v0.8.3-rc.3.txt
+            dist/remote-commander-browser-v*-windows-x86_64.zip
+            dist/SHA256SUMS-windows-v*.txt
           if-no-files-found: error
 
 
@@ -292,7 +294,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-commander-browser-v0.8.3-rc.3-linux-x86_64
+          name: remote-commander-browser-linux-x86_64
           path: |
             build/bin/
             build/BINARY_SHA256-linux.txt

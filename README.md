@@ -6,7 +6,13 @@ A hardened, cross-platform native browser shell for Remote Commander workflows, 
 
 ## Release status
 
-**v0.8.1 candidate — live local Commander monitoring, cross-platform**
+**v0.9.0 — Glass browser release preparation.** Native Glass is the default in
+this versioned source; use --rc-classic-chrome for the former look.
+See docs/RELEASE_0.9.0.md. This build has not yet been tagged, signed
+or publicly released; final reviewer and owner GUI acceptance are open.
+
+
+**Historical v0.8.1 capabilities — Commander monitoring**
 
 v0.8.1 keeps Browser-origin command authority disabled, but adds a native live monitor panel fed by an owner-private local snapshot written by Remote Commander Core. The panel reports Core identity, GUI-control readiness, background-browser readiness, durable workflow count, Agent Extension count, and active operation/lock counts on both Windows and Linux. Existing chat/project binding evidence remains an independent fail-closed read-only layer.
 

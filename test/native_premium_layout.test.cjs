@@ -32,8 +32,8 @@ test("hover uses its own cached circular color ring and real native tooltip",()=
  assert.match(s,/tab.title_button->SetAccessibleName/);
  assert.match(h,/> tab_badges_\{\}/);
 });
-test("first party and ChatGPT remain separate, normal start unchanged",()=>{
- assert.match(s,/HasSwitch\("rc-colorful-chrome-preview"\)/);
+test("Glass is default but classic fallback is explicit; chat sessions stay separate",()=>{
+ assert.match(s,/!preview_cmd->HasSwitch\("rc-classic-chrome"\)/);
  assert.match(s,/if \(preview_home_start\) NewTab\(rc_home::kUrl\)/);
   assert.match(s,/rc_ui::ReadSessionState\(in\)/);
  assert.match(s,/if \(g_native_colors_preview\)/);
@@ -70,9 +70,9 @@ test("dark horizontal tab gaps keep themed parent panel, including layout orient
  assert.match(s,/settings.between_child_spacing = vertical \? 5 : 3/);
 });
 
-test("owner preview uses native overlay scrollbar without webpage CSS and keeps explicit GPU fallback",()=>{
+test("default Glass uses native overlay scrollbar without webpage CSS and retains GPU fallback",()=>{
  const app=fs.readFileSync(path.join(__dirname,"../src/app.cc"),"utf8");
- assert.match(app,/HasSwitch\("rc-colorful-chrome-preview"\)/);
+ assert.match(app,/HasSwitch\("rc-classic-chrome"\)/);
  assert.match(app,/HasSwitch\("enable-features"\)/);
  assert.match(app,/AppendSwitchWithValue\("enable-features", "OverlayScrollbar"\)/);
  assert.match(app,/if \(!command_line->HasSwitch\("disable-gpu"\)\)/);

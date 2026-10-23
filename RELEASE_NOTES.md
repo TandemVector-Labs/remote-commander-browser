@@ -1,26 +1,28 @@
-# Remote Commander Browser v0.8.1
+# Remote Commander Browser v0.9.0
 
-## Live Commander monitor
+The new native Glass Browser generation uses plain semantic versioning.
+Glass is the default user interface. Use --rc-classic-chrome to select
+the legacy chrome without changing a browser profile or saved sessions.
 
-v0.8.1 adds the missing local Browser-to-Commander monitoring path. Remote Commander Core publishes a short-lived owner-private monitor snapshot; the native CEF panel reads it without network calls, shell execution, credentials, cookies, or Browser-origin command authority.
+Features:
+- Native rounded Glass control surfaces, themes, compact horizontal and
+  vertical tab modes, and Chromium overlay scrolling.
+- Preserve up to 16 ChatGPT tabs, their order, and the active selection
+  across restart; private local profiles are never reset.
+- Read-only native chat observer and Commander Companion monitor remain
+  isolated from browser-origin command execution.
+- Cross-platform Windows and Linux CEF builds with pinned dependencies.
 
-The monitor displays:
-- exact local Core version/device/profile/port;
-- GUI backend availability and screenshot/mouse/keyboard/focus capabilities;
-- Commander-owned background-browser readiness;
-- durable workflow count/engine state;
-- installed Agent Extension count/ids;
-- active operation and lock counts;
-- a bounded freshness TTL so stale Core state becomes DISCONNECTED instead of being shown as current.
+Important:
+- ChatGPT/OpenAI login remains the normal website flow. The application
+  is unofficial and not endorsed by OpenAI.
+- Do not bypass the Chromium sandbox or transfer passwords/cookies
+  during updates. On Linux the chrome-sandbox helper requires trusted
+  root:root ownership and mode 4755.
+- Keep the previous installed runtime for rollback until the owner
+  accepts the new Glass GUI and real signed-in multi-tab workflows.
+- The release branch is under review until exact tagged CI, signed
+  checksums and provenance, independent code review and GUI acceptance
+  are completed.
 
-The existing chat/project binding panel remains separately fail-closed and read-only. A system tool catalog is not treated as proof of current-chat exposure.
-
-Security properties retained:
-- no sandbox bypass;
-- no saved-password extraction;
-- no user-profile reset or hidden sign-in;
-- no browser JavaScript bridge to Commander;
-- private-file guards reject links, unsafe permissions and invalid schemas;
-- monitor schema rejects command/action fields.
-
-The release carries forward the stable v0.8.0 CEF 154 line and its session-preserving installer model.
+Project details: docs/RELEASE_0.9.0.md in the source repository.
