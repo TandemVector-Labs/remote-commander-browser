@@ -44,8 +44,8 @@ test('CEF native circular icons are immutable 1x and 2x bitmap badges with acces
   assert.doesNotMatch(code,/--no-sandbox|--disable-web-security|DeleteAllCookies/);
   assert.equal((code.match(/CreateBrowserView\(/g)||[]).length,1);
 });
-test('normal Chrome and existing sessions remain unchanged unless preview is explicitly selected',()=>{
-  assert.match(code,/HasSwitch\("rc-colorful-chrome-preview"\)/);
+test('v0.9.0 defaults to Glass, supports explicit classic fallback, and preserves existing sessions',()=>{
+  assert.match(code,/!preview_cmd->HasSwitch\("rc-classic-chrome"\)/);
   assert.match(code,/if \(g_native_colors_preview\) \{/);
   assert.match(code,/command_line->HasSwitch\("rc-home-start"\)/);
   assert.match(code,/if \(preview_home_start\) NewTab\(rc_home::kUrl\)/);

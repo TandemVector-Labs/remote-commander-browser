@@ -684,8 +684,10 @@ void AppController::OnWindowCreated(CefRefPtr<CefWindow> window) {
   // pre-initialization constructor. Only brand-new opt-in Home profiles use
   // this quiet compact rail; explicit saved choices and normal launches win.
   const auto preview_cmd = CefCommandLine::GetGlobalCommandLine();
+  // Glass is the default in v0.9.0. Explicitly fall back to classic chrome
+  // without changing stored sessions or injecting content into user pages.
   g_native_colors_preview =
-      preview_cmd && preview_cmd->HasSwitch("rc-colorful-chrome-preview");
+      !preview_cmd || !preview_cmd->HasSwitch("rc-classic-chrome");
   if (preview_cmd && preview_cmd->HasSwitch("rc-home-preview")) {
     std::error_code ec;
     const auto pref = std::filesystem::u8path(SidebarCompactStatePath());

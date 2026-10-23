@@ -26,11 +26,10 @@ void BrowserApp::OnBeforeCommandLineProcessing(
       command_line->AppendSwitch("enable-gpu-rasterization");
       command_line->AppendSwitch("enable-zero-copy");
     }
-    // Chromium's native overlay scrollbars preserve horizontal scrolling
-    // without a permanently painted bottom gutter in the owner preview.
-    // Do not override --enable-features provided by the caller and never
-    // change the unflagged normal browser or inject CSS into chatgpt.com.
-    if (command_line->HasSwitch("rc-colorful-chrome-preview") &&
+    // Native overlay scrollbars are part of the v0.9.0 Glass default.
+    // The old chrome remains available with --rc-classic-chrome; avoid
+    // overriding caller-supplied Chromium feature flags or webpage content.
+    if (!command_line->HasSwitch("rc-classic-chrome") &&
         !command_line->HasSwitch("enable-features")) {
       command_line->AppendSwitchWithValue("enable-features", "OverlayScrollbar");
     }
