@@ -2144,8 +2144,15 @@ void AppController::RunFullscreenTabsSelfTest() {
         app->header_ && app->header_->IsVisible() &&
         app->tab_strip_ && app->tab_strip_->IsVisible() &&
         active && active->title_button && active->title_button->IsVisible();
-    const bool left_orientation = app->orientation_button_ &&
+    // Glass exposes orientation through the native More menu rather than
+    // the classic header button; preserve strict visible-route admission.
+    const bool classic_header_toggle = app->orientation_button_ &&
         app->orientation_button_->IsVisible();
+    const bool glass_menu_toggle = app->chrome_more_button_ &&
+        app->chrome_more_button_->IsVisible();
+    const bool left_orientation = g_native_colors_preview
+        ? (glass_menu_toggle && !classic_header_toggle)
+        : classic_header_toggle;
     LOG(WARNING) << "CGWA_FULLSCREEN_TABS_SELFTEST "
                  << (compact && expanded && horizontal &&
                      rail_access && commander_right && left_orientation

@@ -80,3 +80,17 @@ test("default Glass uses native overlay scrollbar without webpage CSS and retain
  assert.match(app,/AppendSwitch\("enable-zero-copy"\)/);
  assert.doesNotMatch(app,/InsertCSS|ExecuteJavaScript|setAttribute\(/);
 });
+
+test("fullscreen CEF QA checks the live Glass More-menu route without making classic header mandatory",()=>{
+ const testFn=s.split("void AppController::RunFullscreenTabsSelfTest()")[1].split("void AppController::ToggleFullscreen()")[0];
+ assert.match(testFn,/const bool classic_header_toggle = app->orientation_button_ &&/);
+ assert.match(testFn,/const bool glass_menu_toggle = app->chrome_more_button_ &&/);
+ assert.match(testFn,/app->chrome_more_button_->IsVisible\(\)/);
+ assert.match(testFn,/g_native_colors_preview\s*\? \(glass_menu_toggle && !classic_header_toggle\)\s*: classic_header_toggle/);
+ assert.match(testFn,/compact && expanded && horizontal &&\s*rail_access && commander_right && left_orientation/);
+ const menuFn=s.split("void AppController::ShowChromeMenu(")[1].split("void AppController::OnPolishMenuCommand(")[0];
+ assert.match(menuFn,/model->AddItem\(kMenuOrientation,/);
+ const route=s.split("void AppController::OnPolishMenuCommand(")[1].split("void AppController::OnButtonPressed(")[0];
+ assert.match(route,/case kMenuOrientation: ToggleTabsOrientation\(\); break;/);
+ assert.match(s,/id == kTabsOrientationButton\)\s*button->SetVisible\(!g_native_colors_preview && !vertical\)/);
+});
