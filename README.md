@@ -12,7 +12,7 @@ See docs/RELEASE_0.9.0.md. This build has not yet been tagged, signed
 or publicly released; final reviewer and owner GUI acceptance are open.
 
 
-**v0.8.1 candidate — live local Commander monitoring, cross-platform**
+**Historical v0.8.1 capabilities — Commander monitoring**
 
 v0.8.1 keeps Browser-origin command authority disabled, but adds a native live monitor panel fed by an owner-private local snapshot written by Remote Commander Core. The panel reports Core identity, GUI-control readiness, background-browser readiness, durable workflow count, Agent Extension count, and active operation/lock counts on both Windows and Linux. Existing chat/project binding evidence remains an independent fail-closed read-only layer.
 
