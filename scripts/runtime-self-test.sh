@@ -30,6 +30,11 @@ set -e
 cp -f "$PROFILE/chrome_debug.log" "$QA/chrome_debug.log" 2>/dev/null || true
 
 [[ "$rc" -eq 0 ]] || { printf 'RUNTIME_SELFTEST=FAIL rc=%s\n' "$rc" >&2; exit 24; }
+# A child can abort while the parent exits 0 and chrome_debug.log looks clean.
+if grep -Eiq 'stack smashing detected|SIGSEGV|segfault|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable|FATAL' "$QA/runtime-selftest.out"; then
+  printf 'RUNTIME_SELFTEST=FAIL: fatal child diagnostic\n' >&2
+  exit 30
+fi
 LOG="$QA/chrome_debug.log"
 [[ -f "$LOG" ]] || { printf 'CEF debug log not produced.\n' >&2; exit 25; }
 grep -q 'CGWA_SELFTEST PASS' "$LOG" || { printf 'Tab lifecycle PASS marker missing.\n' >&2; exit 26; }

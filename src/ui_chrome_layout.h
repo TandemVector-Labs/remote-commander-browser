@@ -27,6 +27,19 @@ inline TabWindow SelectTabs(int logical_width, int count, int active) {
   return {first, visible, capacity};
 }
 
+// Vertical sidebar shows native tab rows without truncating the active tab.
+// Hidden overflow remains reachable through the existing switcher/shortcuts.
+inline TabWindow SelectVerticalTabs(int usable_height, int count, int active) {
+  const int total = std::max(0, count);
+  const int capacity = std::clamp((std::max(0, usable_height) - 16) / 40, 1, 8);
+  if (!total) return {0, 0, capacity};
+  const int visible = std::min(total, capacity);
+  const int selected = std::clamp(active, 0, total - 1);
+  const int first = std::clamp(selected - visible / 2, 0,
+                               std::max(0, total - visible));
+  return {first, visible, capacity};
+}
+
 // Reserve space for refresh and padding. If rows overflow, the final row
 // is a non-interactive summary; no row silently disappears as "healthy".
 inline int CompanionRowSlots(int viewport_height, int row_count) {

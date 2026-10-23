@@ -45,6 +45,13 @@ int main() {
   if (!Check(rc_ui::ShiftActiveTab(eight,0,1) && eight[1].id==0,"eight_tabs")) return 1;
   if (!Check(rc_ui::SelectTabs(800,8,3).capacity==1,"compact_chrome_reservation")) return 1;
   if (!Check(rc_ui::SelectTabs(1920,8,3).capacity==4,"wide_chrome_reservation")) return 1;
+  // Native vertical-tab capacity tracks available viewport height while
+  // preserving the active selection and keeping at most eight live tabs.
+  if (!Check(rc_ui::SelectVerticalTabs(800,8,3).capacity==8,"vertical_all_eight")) return 1;
+  if (!Check(rc_ui::SelectVerticalTabs(120,8,7).visible==2,"vertical_small_height")) return 1;
+  if (!Check(rc_ui::SelectVerticalTabs(120,8,7).first==6,"vertical_active_last_visible")) return 1;
+  if (!Check(rc_ui::SelectVerticalTabs(100,0,0).visible==0,"vertical_empty")) return 1;
+  if (!Check(rc_ui::SelectVerticalTabs(-99,8,6).capacity==1,"vertical_nonnegative_geometry")) return 1;
   // R247 historical R246 cppcheck failure prevention: prove browser
   // resource identity via mutation of the original heap object, not by
   // cross-vector unique_ptr.get() equality on which cppcheck 2.13 erred.
