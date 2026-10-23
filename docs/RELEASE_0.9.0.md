@@ -39,6 +39,13 @@ These results cover the flagged preview parent source, not yet
 the newly default-enabled v0.9.0 source. The actual v0.9.0
 tagged-commit CI and publication must be separately verified.
 
+A tagged CI run may produce attested assets, but must create a
+**Draft Release**, not automatically publish v0.9.0 as public Stable
+or Latest. The separate owner-controlled promotion from Draft to
+public Stable requires independently reviewed source, owner-signed-in
+Glass 16-tab GUI acceptance and client rollback checks.
+A successful tag build grants no fleet installation authority.
+
 Before full stable rollout: secure independent code review,
 owner visual GUI acceptance, real authenticated multi-tab
 session acceptance without modifying existing profiles, and
