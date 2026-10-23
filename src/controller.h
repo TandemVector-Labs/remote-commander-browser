@@ -1,6 +1,8 @@
 #pragma once
 #include "ui_tab_drag.h"
 
+#include <array>
+#include <chrono>
 #include <map>
 #include <string>
 #include <vector>
@@ -9,6 +11,9 @@
 #include "commander_companion.h"
 #include "native_chat_observer.h"
 #include "include/cef_browser.h"
+#include "include/cef_image.h"
+#include "include/cef_menu_model.h"
+#include "include/cef_menu_model_delegate.h"
 #include "include/cef_client.h"
 #include "include/views/cef_box_layout.h"
 #include "include/views/cef_browser_view.h"
@@ -38,6 +43,8 @@ class AppController {
   void CloseActiveTab();
   void ToggleFullscreen();
   void ToggleTheme();
+  void ToggleTabsOrientation();
+  void ToggleSidebarCompact();
   void ApplyNativeTheme();
   void ToggleMaximize();
   void Minimize();
@@ -56,6 +63,7 @@ class AppController {
   bool OnAccelerator(int command_id);
   void OnButtonPressed(CefRefPtr<CefButton> button);
   void OnButtonStateChanged(CefRefPtr<CefButton> button);
+  void OnPolishMenuCommand(int command_id);
 
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser);
   bool OnBrowserDoClose(CefRefPtr<CefBrowser> browser);
@@ -92,11 +100,28 @@ class AppController {
   class ButtonDelegateImpl;
   class BrowserViewDelegateImpl;
   class FixedPanelDelegate;
+  class SidebarSurfaceDelegate;
+  class HeaderSurfaceDelegate;
+  class TabItemSurfaceDelegate;
+  class ChromeMenuDelegate;
 
   void BuildWindowUI();
+  bool VerticalTabsVisible() const;
+  int SidebarWidth() const;
+  CefRefPtr<CefImage> RoundedTabBadge(int tab_id, bool active, bool hovered = false);
+  CefRefPtr<CefImage> NativeControlIcon(int id, bool hot);
+  bool SidebarCompactEffective() const;
+  void RunVerticalTabsSelfTest();
+  void RunFullscreenTabsSelfTest();
+  void RunLiveTabCounterSelfTest();
   void BuildHeaderControls();
+  void ShowChromeMenu(CefRefPtr<CefButton> anchor);
   void UpdateDraggableRegions();
   void RebuildTabStrip();
+  void UpdateTabSwitcherLabel();
+  void RetireTabUi(const Tab& tab);
+  void ReleaseRetiredUi();
+  void TabLifetimeSoakStep(int cycle);
   void UpdateTabButton(Tab& tab);
   void SetActiveTabInternal(int tab_id);
   void LayoutTabOverlays();
@@ -123,14 +148,33 @@ class AppController {
   CefRefPtr<CefWindow> window_;
   CefRefPtr<CefPanel> header_;
   CefRefPtr<CefPanel> tab_strip_;
+  CefRefPtr<CefPanel> vertical_tab_strip_;
+  CefRefPtr<CefPanel> sidebar_;
+  CefRefPtr<CefPanel> sidebar_fill_;
+  CefRefPtr<CefBoxLayout> sidebar_layout_;
+  CefRefPtr<SidebarSurfaceDelegate> sidebar_surface_delegate_;
+  CefRefPtr<CefPanel> header_spacer_;
+  CefRefPtr<CefPanel> window_controls_;
+  CefRefPtr<CefOverlayController> sidebar_overlay_;
   CefRefPtr<CefPanel> content_;
   CefRefPtr<CefPanel> companion_panel_;
+  CefRefPtr<CefPanel> companion_fill_;
+  CefRefPtr<CefBoxLayout> companion_layout_;
   CefRefPtr<CefOverlayController> companion_overlay_;
   std::vector<CefRefPtr<CefLabelButton>> companion_rows_;
   std::vector<CefRefPtr<CefLabelButton>> header_buttons_;
   CefRefPtr<CefLabelButton> tab_switcher_button_;
   CefRefPtr<CefLabelButton> theme_button_;
+  CefRefPtr<CefLabelButton> chrome_more_button_;
+  CefRefPtr<ChromeMenuDelegate> chrome_menu_delegate_;
+  CefRefPtr<CefLabelButton> orientation_button_;
+  CefRefPtr<CefLabelButton> sidebar_toggle_button_;
+  CefRefPtr<CefLabelButton> sidebar_new_tab_button_;
+  CefRefPtr<CefLabelButton> sidebar_orientation_button_;
+  CefRefPtr<CefLabelButton> sidebar_companion_button_;
   int visible_tab_capacity_ = -1;
+  bool compact_toolbar_cached_ = false;
+  bool narrow_toolbar_cached_ = false;
   companion::Monitor companion_monitor_;
   companion::Automation companion_automation_;
   companion::Observation companion_observation_;
@@ -144,15 +188,32 @@ class AppController {
   CefRefPtr<ButtonDelegateImpl> button_delegate_;
   CefRefPtr<BrowserViewDelegateImpl> browser_view_delegate_;
   CefRefPtr<FixedPanelDelegate> header_delegate_;
+  CefRefPtr<HeaderSurfaceDelegate> header_surface_delegate_;
+  CefRefPtr<TabItemSurfaceDelegate> tab_item_surface_delegate_;
 
   CefRefPtr<AppClient> client_;
+  struct RetiredUi {
+    std::chrono::steady_clock::time_point created;
+    CefRefPtr<CefPanel> panel;
+    CefRefPtr<CefLabelButton> title;
+    CefRefPtr<CefLabelButton> close;
+  };
+  // Native circular badge assets; lazily rasterized once per color-state.
+  std::array<std::array<std::array<std::array<std::array<CefRefPtr<CefImage>, 8>, 8>, 3>, 2>, 2> tab_badges_{};
+  std::array<std::array<std::array<CefRefPtr<CefImage>, 16>, 2>, 2> chrome_badges_{};
+  std::vector<RetiredUi> retired_ui_;
   std::vector<Tab> tabs_;
   int next_tab_id_ = 1;
   int active_tab_id_ = 0;
+  std::string saved_session_snapshot_;
   rc_ui::TabDragIntent tab_drag_;
   bool fullscreen_ = false;
+  bool vertical_tabs_ = false;
+  bool sidebar_compact_ = false;
+  bool fullscreen_sidebar_expanded_ = false;
   bool companion_visible_ = false;
   bool companion_tick_scheduled_ = false;
+  unsigned companion_binding_poll_ = 0;
   bool closing_ = false;
   bool window_created_ = false;
   int self_test_tab_id_ = 0;

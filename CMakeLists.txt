@@ -46,6 +46,8 @@ set(APP_SRCS
   src/main.cc
   src/app.cc
   src/app.h
+  src/first_party_home.cc
+  src/first_party_home.h
   src/controller.cc
   src/controller.h
   src/client.cc

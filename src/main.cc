@@ -12,6 +12,7 @@
 #include <system_error>
 
 #include "app.h"
+#include "first_party_home.h"
 #include "include/base/cef_compiler_specific.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_app.h"
@@ -25,6 +26,16 @@ namespace {
 bool IsSubprocess(CefRefPtr<CefCommandLine> command_line) {
   return command_line && command_line->HasSwitch("type");
 }
+
+class HomeSubprocessApp final : public CefApp {
+ public:
+  void OnRegisterCustomSchemes(
+      CefRawPtr<CefSchemeRegistrar> registrar) override {
+    rc_home::RegisterScheme(registrar);
+  }
+ private:
+  IMPLEMENT_REFCOUNTING(HomeSubprocessApp);
+};
 
 void ConfigureProfileOverride(CefRefPtr<CefCommandLine> command_line) {
   if (!command_line || !command_line->HasSwitch("cgwa-profile-dir"))
@@ -79,6 +90,12 @@ int XIOErrorHandlerImpl(Display* display) {
 }
 #endif
 
+// A Linux CEF child may rotate the stack canary during fork. The entire
+// call path to CefExecuteProcess must avoid retaining the old stack guard.
+// See upstream CEF #3912. Keep Windows builds unchanged.
+#if defined(__linux__)
+NO_STACK_PROTECTOR
+#endif
 int RunBrowser(const CefMainArgs& main_args,
                CefRefPtr<CefApp> app,
                void* sandbox_info) {
@@ -134,8 +151,9 @@ NO_STACK_PROTECTOR int APIENTRY wWinMain(HINSTANCE hInstance,
   ConfigureProfileOverride(command_line);
 
   CefRefPtr<CefApp> app;
-  if (!IsSubprocess(command_line))
-    app = new BrowserApp();
+  app = IsSubprocess(command_line)
+      ? static_cast<CefApp*>(new HomeSubprocessApp())
+      : static_cast<CefApp*>(new BrowserApp());
 
   void* sandbox_info = nullptr;
 #if defined(CEF_USE_SANDBOX)
@@ -152,8 +170,9 @@ NO_STACK_PROTECTOR int main(int argc, char* argv[]) {
 
   CefMainArgs main_args(argc, argv);
   CefRefPtr<CefApp> app;
-  if (!IsSubprocess(command_line))
-    app = new BrowserApp();
+  app = IsSubprocess(command_line)
+      ? static_cast<CefApp*>(new HomeSubprocessApp())
+      : static_cast<CefApp*>(new BrowserApp());
 
   return RunBrowser(main_args, app, nullptr);
 }

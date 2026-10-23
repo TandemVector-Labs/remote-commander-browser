@@ -26,6 +26,24 @@ else
   printf 'CLEAN\n'
 fi
 
+printf '%s\n' '== Linux CEF fork stack-guard contract =='
+if python3 - "$ROOT/src/main.cc" <<'PY_GUARD'
+import re
+import sys
+from pathlib import Path
+source = Path(sys.argv[1]).read_text()
+pattern = r'(?m)^#if defined\(__linux__\)\s*\nNO_STACK_PROTECTOR\s*\n#endif\s*\nint RunBrowser\s*\('
+if not re.search(pattern, source):
+    print('Missing Linux NO_STACK_PROTECTOR on RunBrowser → CefExecuteProcess path.', file=sys.stderr)
+    sys.exit(1)
+print('LINUX_CEF_FORK_GUARD_PASS')
+PY_GUARD
+then
+  :
+else
+  status=1
+fi
+
 printf '%s\n' '== sandbox bypass scan =='
 if grep -RIn -- '--no-sandbox' "$ROOT/src"; then
   printf 'Source contains --no-sandbox; release rejected.\n' >&2

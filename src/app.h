@@ -18,6 +18,7 @@ class BrowserApp : public CefApp, public CefBrowserProcessHandler {
   void OnBeforeCommandLineProcessing(
       const CefString& process_type,
       CefRefPtr<CefCommandLine> command_line) override;
+  void OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) override;
   void OnContextInitialized() override;
   bool OnAlreadyRunningAppRelaunch(
       CefRefPtr<CefCommandLine> command_line,

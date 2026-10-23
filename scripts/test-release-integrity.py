@@ -93,6 +93,24 @@ class ReleaseIntegrityTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(MODULE.IntegrityError):
                 MODULE.verify(value, self.release)
 
+    def test_maximum_size_adversarial_checksum_record_rejected(self):
+        # A near-miss 512-byte ASCII record must fail in bounded time.
+        # (64 hex + 2 spaces + 445 hostile name bytes + newline.)
+        record = "f" * 64 + "  " + "0" * 445 + "\n"
+        self.assertEqual(len(record.encode("ascii")), 512)
+        self.manifest.write_text(record, encoding="ascii")
+        self.rejected()
+
+    def test_nonhex_checksum_digest_rejected(self):
+        record = self.manifest.read_text(encoding="ascii")
+        self.manifest.write_text("g" + record[1:], encoding="ascii")
+        self.rejected()
+
+    def test_checksum_separator_must_be_two_spaces(self):
+        record = self.manifest.read_text(encoding="ascii")
+        self.manifest.write_text(record[:64] + " \t" + record[66:], encoding="ascii")
+        self.rejected()
+
     def test_cli_returns_nonzero_for_bad_hash(self):
         (self.release / self.setup).write_bytes(b"TAMPERED")
         import sys
@@ -102,6 +120,62 @@ class ReleaseIntegrityTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RELEASE_PRODUCER_SHA256_FAIL", result.stderr)
+
+    def test_cli_rejects_valid_but_untrusted_root(self):
+        import sys
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "verify-release-assets.py"),
+             VERSION, str(self.release)],
+            capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
+
+    def test_cli_rejects_path_traversal_and_noncanonical_aliases(self):
+        import sys
+        for name in ("dist/../dist/release", "../dist/release",
+                     "dist/release/../release", str(self.release)):
+            with self.subTest(name=name):
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts" / "verify-release-assets.py"),
+                     VERSION, name], cwd=ROOT,
+                    capture_output=True, text=True, timeout=15)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
+
+    def test_cli_accepts_valid_fixed_real_stage_directory(self):
+        import sys
+        fake = self.root / "minimal-repo"
+        scripts = fake / "scripts"
+        scripts.mkdir(parents=True)
+        shutil.copyfile(ROOT / "scripts" / "verify-release-assets.py",
+                        scripts / "verify-release-assets.py")
+        stage = fake / "dist" / "release"
+        shutil.copytree(self.release, stage)
+        result = subprocess.run(
+            [sys.executable, str(scripts / "verify-release-assets.py"),
+             VERSION, "dist/release"],
+            cwd=fake, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("RELEASE_PRODUCER_SHA256_PASS", result.stdout)
+
+    @unittest.skipUnless(os.name == "posix", "native POSIX parent symlink semantics")
+    def test_cli_rejects_symlinked_dist_parent_even_with_valid_assets(self):
+        import sys
+        fake = self.root / "symlinked-repo"
+        scripts = fake / "scripts"
+        scripts.mkdir(parents=True)
+        shutil.copyfile(ROOT / "scripts" / "verify-release-assets.py",
+                        scripts / "verify-release-assets.py")
+        # self.root/release has valid, correctly hashed payloads.
+        # The dist parent points outside fake even though dist/release is
+        # not itself a symlink. The CLI must deny before hashing anything.
+        (fake / "dist").symlink_to(self.root, target_is_directory=True)
+        result = subprocess.run(
+            [sys.executable, str(scripts / "verify-release-assets.py"),
+             VERSION, "dist/release"],
+            cwd=fake, capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE_STAGING_DIRECTORY_DENIED", result.stderr)
 
     @unittest.skipUnless(os.name == "posix", "native POSIX symlink semantics")
     def test_symlink_member_rejected(self):
@@ -266,6 +340,123 @@ class ReleaseIntegrityTests(unittest.TestCase):
         )
         self.assertEqual(rejected.returncode, 24, rejected.stderr)
         self.assertEqual(rejected.stdout, "")
+
+
+    @unittest.skipUnless(os.name == "posix", "Linux runtime/symlink semantics")
+    def test_uninstall_old_runtime_denies_live_newer_sandbox_symlink(self):
+        # A newer stable runtime can depend on a root-owned helper from an
+        # older runtime. No sudo, profile or launcher mutation is permissible.
+        home = self.root / "uninstall-home"
+        base = home / ".local" / "share" / "chatgpt-cef-v2"
+        uninstall_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        old = base / f"runtime-v{uninstall_version}"
+        newer = base / "runtime-v9.9.9"
+        old.mkdir(parents=True)
+        newer.mkdir()
+        old_sandbox = old / "chrome-sandbox"
+        old_sandbox.write_bytes(b"private test sandbox; no SUID\n")
+        (newer / "chrome-sandbox").symlink_to(old_sandbox)
+        launcher = home / ".local" / "bin" / "chatgpt-cef-v2"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(f'#!/bin/sh\nRUNTIME="{newer}"\n', encoding="utf-8")
+        desktop = home / ".local" / "share" / "applications" / "chatgpt-cef-v2.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("[Desktop Entry]\nName=Browser\n", encoding="utf-8")
+        profile = home / ".config" / "chatgpt-cef-v2"
+        profile.mkdir(parents=True)
+        (profile / "session").write_text("PRESERVE", encoding="utf-8")
+        env = {**os.environ, "HOME": str(home)}
+        script = ROOT / "scripts" / "uninstall-local.sh"
+        proc = subprocess.run(["bash", str(script)], env=env,
+                              capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("UNINSTALL_SANDBOX_REFERENCED_BY_ANOTHER_VERSION", proc.stderr)
+        self.assertTrue(old_sandbox.is_file())
+        self.assertTrue((newer / "chrome-sandbox").is_symlink())
+        self.assertTrue(launcher.is_file())
+        self.assertTrue(desktop.is_file())
+        self.assertEqual((profile / "session").read_text(), "PRESERVE")
+        # Without the cross-version dependency, retirement may proceed, but
+        # it must never remove the newer launcher, desktop entry or profile.
+        (newer / "chrome-sandbox").unlink()
+        retired = subprocess.run(["bash", str(script)], env=env,
+                                capture_output=True, text=True, timeout=12)
+        self.assertEqual(retired.returncode, 0, retired.stderr)
+        self.assertFalse(old.exists())
+        self.assertTrue(newer.exists())
+        self.assertTrue(launcher.is_file())
+        self.assertTrue(desktop.is_file())
+        self.assertEqual((profile / "session").read_text(), "PRESERVE")
+
+    @unittest.skipUnless(os.name == "posix", "Linux runtime/symlink semantics")
+    def test_uninstall_runtime_symlink_fails_before_any_mutation(self):
+        home = self.root / "uninstall-symlink-home"
+        base = home / ".local" / "share" / "chatgpt-cef-v2"
+        base.mkdir(parents=True)
+        outside = self.root / "uninstall-outside-data"
+        outside.mkdir()
+        (outside / "sentinel").write_text("DO_NOT_TOUCH", encoding="utf-8")
+        uninstall_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        (base / f"runtime-v{uninstall_version}").symlink_to(outside, target_is_directory=True)
+        env = {**os.environ, "HOME": str(home)}
+        p = subprocess.run(["bash", str(ROOT / "scripts" / "uninstall-local.sh")],
+                           env=env, capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("UNINSTALL_RUNTIME_REPARSE_REFUSED", p.stderr)
+        self.assertEqual((outside / "sentinel").read_text(), "DO_NOT_TOUCH")
+
+    @unittest.skipUnless(os.name == "posix", "Linux ancestor-symlink semantics")
+    def test_uninstall_rejects_symlinked_runtime_ancestors(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        for location in ("approot", "share"):
+            with self.subTest(location=location):
+                home = self.root / f"host-{location}"
+                outside = self.root / f"external-{location}"
+                outside.mkdir()
+                if location == "approot":
+                    (home / ".local" / "share").mkdir(parents=True)
+                    (home / ".local" / "share" / "chatgpt-cef-v2").symlink_to(
+                        outside, target_is_directory=True)
+                    external_runtime = outside / f"runtime-v{version}"
+                else:
+                    (home / ".local").mkdir(parents=True)
+                    (home / ".local" / "share").symlink_to(
+                        outside, target_is_directory=True)
+                    external_runtime = outside / "chatgpt-cef-v2" / f"runtime-v{version}"
+                external_runtime.mkdir(parents=True)
+                sentinel = external_runtime / "SYNTHETIC_DO_NOT_DELETE"
+                sentinel.write_text("PRESERVE", encoding="utf-8")
+                p = subprocess.run(
+                    ["bash", str(ROOT / "scripts" / "uninstall-local.sh")],
+                    env={**os.environ, "HOME": str(home)},
+                    capture_output=True, text=True, timeout=12)
+                self.assertNotEqual(p.returncode, 0, p.stdout)
+                self.assertIn("UNINSTALL_ANCESTOR_REPARSE_REFUSED", p.stderr)
+                self.assertEqual(sentinel.read_text(encoding="utf-8"), "PRESERVE")
+
+    @unittest.skipUnless(os.name == "posix", "Linux config ancestor-symlink semantics")
+    def test_uninstall_purge_profile_rejects_config_ancestor_symlink(self):
+        home = self.root / "profile-ancestor-home"
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        runtime = home / ".local" / "share" / "chatgpt-cef-v2" / f"runtime-v{version}"
+        runtime.mkdir(parents=True)
+        (runtime / "SYNTHETIC_RUNTIME").write_text("PRESERVE", encoding="utf-8")
+        launcher = home / ".local" / "bin" / "chatgpt-cef-v2"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(f'#!/bin/sh\nRUNTIME="{runtime}"\n', encoding="utf-8")
+        outside = self.root / "external-config-ancestor"
+        (outside / "chatgpt-cef-v2").mkdir(parents=True)
+        sentinel = outside / "chatgpt-cef-v2" / "SYNTHETIC_PROFILE"
+        sentinel.write_text("PRESERVE", encoding="utf-8")
+        (home / ".config").symlink_to(outside, target_is_directory=True)
+        p = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "uninstall-local.sh"), "--purge-profile"],
+            env={**os.environ, "HOME": str(home)},
+            capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(p.returncode, 0, p.stdout)
+        self.assertIn("UNINSTALL_ANCESTOR_REPARSE_REFUSED", p.stderr)
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "PRESERVE")
+        self.assertTrue(runtime.is_dir())
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
