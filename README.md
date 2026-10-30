@@ -1,5 +1,9 @@
 # Remote Commander Browser
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/GOD13emad/GOD13emad/main/assets/projects/RemoteCommanderBrowser-hero-20261030.png" alt="Remote Commander Browser — approved conceptual illustration of the desktop browser shell, not an application screenshot" width="720">
+</p>
+
 A hardened, cross-platform native browser shell for Remote Commander workflows, built with Chromium Embedded Framework (CEF), with native multi-tab controls, Persian/Arabic RTL support, voice/media permissions scoped to ChatGPT, session restore, and a modern minimal UI.
 
 > **Unofficial project.** This software is not affiliated with or endorsed by OpenAI. It loads `https://chatgpt.com/` and uses the normal ChatGPT sign-in flow.
