@@ -116,6 +116,17 @@ class TestTransactionalLinux(unittest.TestCase):
         self.assertEqual(x.returncode,2)
         self.assertIn("CURRENT_TARGET_NOT_OWNED",x.stderr)
         self.assertEqual(old,self.target())
+    def test_current_version_directory_symlink_alias_refused(self):
+        self.good(self.invoke(version="0.8.1"))
+        valid_version = self.target()
+        (self.app / "v-alias").symlink_to(valid_version, target_is_directory=True)
+        (self.app / "current").unlink()
+        (self.app / "current").symlink_to("v-alias")
+        rejected = self.invoke(source=self.new, version="0.8.2")
+        self.assertEqual(rejected.returncode, 2, rejected.stdout)
+        self.assertIn("CURRENT_TARGET_NOT_OWNED", rejected.stderr)
+        self.assertEqual(self.target(), "v-alias")
+
     def test_arbitrary_payload_symlink_rejected(self):
         (self.new/"escape").symlink_to(Path("/etc/hosts"))
         x=self.invoke(source=self.new)

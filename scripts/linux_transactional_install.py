@@ -186,7 +186,7 @@ def install(args):
             ensure(current.is_symlink(), "CURRENT_NOT_SYMLINK")
             target = os.readlink(current)
             ensure(target == Path(target).name and target.startswith("v") and
-                   (root / target).is_dir() and
+                   (root / target).is_dir() and not (root / target).is_symlink() and
                    (root / target).resolve().parent == root.resolve(),
                    "CURRENT_TARGET_NOT_OWNED")
             previous = target
