@@ -37,6 +37,9 @@ class TestTransactionalLinux(unittest.TestCase):
         src = self.tmp / ("source-"+name)
         src.mkdir()
         (src / "chatgpt-cef-v2").write_bytes(b"#!/bin/sh\nprintf '" + data + b"\\n'\n")
+        (src / "chatgpt-cef-v2").write_bytes(
+            (src / "chatgpt-cef-v2").read_bytes() +
+            b"printf 'CGWA_SELFTEST PASS\\nCGWA_LAST_TAB_SELFTEST PASS\\nCGWA_UI_TAB_CLOSE_SELFTEST PASS\\n' >&2\n")
         (src / "chatgpt-cef-v2").chmod(0o700)
         (src / "chrome-sandbox").symlink_to(TRUSTED.resolve())
         return src
@@ -378,6 +381,26 @@ raise SystemExit(99)
         self.assertNotEqual(old,self.target())
         self.assertEqual(result["previous"],old)
         self.assertEqual(len(list(self.app.glob(".qa-canary-*"))),0)
+    def test_qa_canary_zero_exit_without_selftest_evidence_rolls_back(self):
+        self.good(self.invoke(version="0.8.1"))
+        baseline=self.target()
+        (self.new/"chatgpt-cef-v2").write_text("#!/bin/sh\nexit 0\n")
+        (self.new/"chatgpt-cef-v2").chmod(0o700)
+        result=self.invoke(source=self.new,version="0.8.2",qa_canary=True)
+        self.assertEqual(result.returncode,2,result.stdout)
+        self.assertIn("QA_CANARY_MISSING_SELFTEST_MARKER",result.stderr)
+        self.assertEqual(self.target(),baseline)
+
+    def test_qa_canary_partial_markers_rejected(self):
+        self.good(self.invoke(version="0.8.1"))
+        baseline=self.target()
+        (self.new/"chatgpt-cef-v2").write_text("#!/bin/sh\nprintf 'CGWA_SELFTEST PASS\\n' >&2\nexit 0\n")
+        (self.new/"chatgpt-cef-v2").chmod(0o700)
+        result=self.invoke(source=self.new,version="0.8.2",qa_canary=True)
+        self.assertEqual(result.returncode,2,result.stdout)
+        self.assertIn("QA_CANARY_MISSING_SELFTEST_MARKER",result.stderr)
+        self.assertEqual(self.target(),baseline)
+
     def test_qa_canary_nonzero_exit_auto_rolls_back(self):
         self.good(self.invoke(version="0.8.1"))
         old=self.target()
@@ -411,7 +434,7 @@ raise SystemExit(99)
                        'test -z "${RC_QA_SENTINEL:-}" || exit 41\n'
                        'test -d "$HOME" || exit 42\n'
                        'test "$HOME" = "$XDG_CONFIG_HOME" && exit 43\n'
-                       'case "$HOME" in *"/.qa-canary-"*) exit 0;; *) exit 44;; esac\n')
+                       'case "$HOME" in *"/.qa-canary-"*) printf "CGWA_SELFTEST PASS\\nCGWA_LAST_TAB_SELFTEST PASS\\nCGWA_UI_TAB_CLOSE_SELFTEST PASS\\n" >&2; exit 0;; *) exit 44;; esac\n')
         exe.chmod(0o700)
         old=os.environ.get("RC_QA_SENTINEL")
         os.environ["RC_QA_SENTINEL"]="SHOULD_NOT_PASS"

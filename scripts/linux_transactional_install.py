@@ -93,6 +93,10 @@ def qa_canary_check(root: Path, dest: Path, swap_id: str, seconds: int):
             child.communicate(timeout=5)
             raise InstallError("QA_CANARY_TIMEOUT") from exc
         ensure(child.returncode == 0, "QA_CANARY_FAILED_EXIT")
+        required = (b"CGWA_SELFTEST PASS", b"CGWA_LAST_TAB_SELFTEST PASS",
+                    b"CGWA_UI_TAB_CLOSE_SELFTEST PASS")
+        ensure(errors is not None and all(marker in errors for marker in required),
+               "QA_CANARY_MISSING_SELFTEST_MARKER")
     finally:
         if child is not None and child.poll() is None:
             os.killpg(child.pid, signal.SIGKILL)
