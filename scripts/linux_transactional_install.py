@@ -116,6 +116,38 @@ def contents(src: Path, helper: Path):
     return entries
 
 
+
+def owned_version_directory(root: Path, target: str) -> bool:
+    """Recognize an installer-created local version; not publisher authentication."""
+    match = re.fullmatch(
+        r"v([0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?)-([0-9a-f]{12})", target)
+    if not match:
+        return False
+    directory = root / target
+    if (directory.is_symlink() or not directory.is_dir() or
+            directory.resolve().parent != root.resolve()):
+        return False
+    for name in ("chatgpt-cef-v2", "launch.sh", "product-install.json"):
+        entry = directory / name
+        if entry.is_symlink() or not entry.is_file():
+            return False
+    metadata = directory / "product-install.json"
+    if metadata.stat().st_size > 4096:
+        return False
+    try:
+        info = json.loads(metadata.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        return False
+    if not isinstance(info, dict):
+        return False
+    digest = info.get("manifestSha256")
+    return (type(info.get("schema")) is int and info["schema"] == 1 and
+            info.get("version") == match.group(1) and
+            info.get("automaticUpdate") is False and isinstance(digest, str) and
+            re.fullmatch(r"[0-9a-f]{64}", digest) is not None and
+            digest.startswith(match.group(2)))
+
+
 def install(args):
     source = Path(args.source).resolve(strict=True)
     root = Path(os.path.abspath(args.install_root))
@@ -175,9 +207,7 @@ def install(args):
                 pending_target = os.readlink(pending_marker)
                 old_target = os.readlink(recovered)
                 for target in (pending_target, old_target):
-                    ensure(target == Path(target).name and target.startswith("v") and
-                           (root / target).is_dir() and not (root / target).is_symlink() and
-                           (root / target).resolve().parent == root.resolve(),
+                    ensure(owned_version_directory(root, target),
                            "INTERRUPTED_SWAP_INVALID_TARGET")
                 recovered.replace(current)
                 sync_dir(root)
@@ -185,9 +215,7 @@ def install(args):
         if os.path.lexists(current):
             ensure(current.is_symlink(), "CURRENT_NOT_SYMLINK")
             target = os.readlink(current)
-            ensure(target == Path(target).name and target.startswith("v") and
-                   (root / target).is_dir() and not (root / target).is_symlink() and
-                   (root / target).resolve().parent == root.resolve(),
+            ensure(owned_version_directory(root, target),
                    "CURRENT_TARGET_NOT_OWNED")
             previous = target
         entries = contents(source, helper)

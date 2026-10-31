@@ -116,6 +116,28 @@ class TestTransactionalLinux(unittest.TestCase):
         self.assertEqual(x.returncode,2)
         self.assertIn("CURRENT_TARGET_NOT_OWNED",x.stderr)
         self.assertEqual(old,self.target())
+    def test_unknown_current_version_directory_rejected(self):
+        self.good(self.invoke(version="0.8.1"))
+        rogue = self.app / "v-unknown-local-dir"
+        rogue.mkdir()
+        (self.app / "current").unlink()
+        (self.app / "current").symlink_to(rogue.name)
+        attempt = self.invoke(source=self.new, version="0.8.2")
+        self.assertEqual(attempt.returncode, 2, attempt.stdout)
+        self.assertIn("CURRENT_TARGET_NOT_OWNED", attempt.stderr)
+        self.assertEqual(self.target(), rogue.name)
+
+    def test_current_version_shaped_directory_without_manifest_rejected(self):
+        self.good(self.invoke(version="0.8.1"))
+        rogue = self.app / "v0.8.2-aaaaaaaaaaaa"
+        rogue.mkdir()
+        (self.app / "current").unlink()
+        (self.app / "current").symlink_to(rogue.name)
+        attempt = self.invoke(source=self.new, version="0.8.3")
+        self.assertEqual(attempt.returncode, 2, attempt.stdout)
+        self.assertIn("CURRENT_TARGET_NOT_OWNED", attempt.stderr)
+        self.assertEqual(self.target(), rogue.name)
+
     def test_current_version_directory_symlink_alias_refused(self):
         self.good(self.invoke(version="0.8.1"))
         valid_version = self.target()
