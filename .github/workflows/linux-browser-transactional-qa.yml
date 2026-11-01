@@ -1,0 +1,35 @@
+name: Linux Browser transactional installation QA
+on:
+  pull_request:
+    paths:
+      - 'scripts/linux_transactional_install.py'
+      - 'test/test_linux_transactional_install.py'
+      - '.github/workflows/linux-browser-transactional-qa.yml'
+  push:
+    branches:
+      - 'feat/linux-browser-transactional-rollback-20261021'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-install-transaction:
+    name: Linux offline swap and rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provision disposable root-owned sandbox fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/rc-test-sandbox-helper"
+          sudo install -o root -g root -m 4755 /bin/true "$fixture"
+          test "$(stat -c '%u:%a' "$fixture")" = "0:4755"
+          printf 'RC_BROWSER_TEST_APPROVED_SANDBOX=%s\n' "$fixture" >> "$GITHUB_ENV"
+      - name: Run fail-closed offline installer tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/linux_transactional_install.py test/test_linux_transactional_install.py
+          python3 -m unittest discover -s test -p test_linux_transactional_install.py -v
