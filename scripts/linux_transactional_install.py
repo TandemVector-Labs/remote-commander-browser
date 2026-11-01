@@ -98,8 +98,13 @@ def qa_canary_check(root: Path, dest: Path, swap_id: str, seconds: int):
         ensure(errors is not None and all(marker in errors for marker in required),
                "QA_CANARY_MISSING_SELFTEST_MARKER")
     finally:
-        if child is not None and child.poll() is None:
-            os.killpg(child.pid, signal.SIGKILL)
+        if child is not None:
+            # The launcher may exit while descendants in its isolated session live on.
+            # Always terminate our newly created process group, including success.
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             child.wait(timeout=5)
         shutil.rmtree(profile)
         sync_dir(root)

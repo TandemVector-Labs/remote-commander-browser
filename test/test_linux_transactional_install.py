@@ -444,6 +444,38 @@ raise SystemExit(99)
             if old is None: os.environ.pop("RC_QA_SENTINEL",None)
             else: os.environ["RC_QA_SENTINEL"]=old
         self.good(good)
+    def test_qa_canary_success_reaps_descendant_process_group(self):
+        # A successful launcher can exit after emitting markers while its
+        # detached-from-parent (but same-session) subprocess remains alive.
+        import signal
+        spec = importlib.util.spec_from_file_location("qa_installer", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        product = self.tmp / "mock-product"
+        product.mkdir()
+        marker = self.tmp / "descendant.pid"
+        launcher = product / "launch.sh"
+        launcher.write_text(
+            "#!/bin/sh\n"
+            "sleep 25 </dev/null >/dev/null 2>&1 &\n"
+            f"echo $! > '{marker}'\n"
+            'printf "CGWA_SELFTEST PASS\\nCGWA_LAST_TAB_SELFTEST PASS\\nCGWA_UI_TAB_CLOSE_SELFTEST PASS\\n" >&2\n'
+            "exit 0\n")
+        launcher.chmod(0o700)
+        try:
+            module.qa_canary_check(self.tmp, product, "survivor-regression", 3)
+            pid = int(marker.read_text())
+            proc_stat = Path(f"/proc/{pid}/stat")
+            if proc_stat.exists():
+                state = proc_stat.read_text().split()[2]
+                self.assertEqual(state, "Z", "Canary leaked a live descendant")
+        finally:
+            if marker.exists():
+                try:
+                    os.kill(int(marker.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
     def test_launcher_and_no_credential_access(self):
         self.good(self.invoke())
         launcher=self.app/"current"/"launch.sh"
