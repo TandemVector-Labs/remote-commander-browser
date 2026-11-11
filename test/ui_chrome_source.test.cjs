@@ -91,3 +91,59 @@ test('R249 native drag guards compare the actual CEF View identity, not C++ wrap
  assert.doesNotMatch(controller,/title_button != button/);
  assert.match(controller,/CGWA_NATIVE_DRAG_DIAG stage=source/);
 });
+
+
+test('R105 captured native child fatal is rejected even if parent process returned zero',()=>{
+ const script=read('scripts/runtime-self-test.sh');
+ const begin='# R105_OUTPUT_FATAL_BEGIN\n', end='# R105_OUTPUT_FATAL_END\n';
+ const from=script.indexOf(begin), to=script.indexOf(end);
+ assert.ok(from>=0&&to>from,'captured stdout/stderr must have an explicit fail-closed fatal gate');
+ const after=script.indexOf('[[ "$rc" -eq 0 ]]');
+ const before=script.indexOf('LOG="$QA/chrome_debug.log"');
+ assert.ok(after>=0&&before>after&&from>after&&to<before,
+   'fatal output must be checked after process exit and before normal log PASS admission');
+ const {tmpdir}=require('node:os');
+ const {spawnSync}=require('node:child_process');
+ const dir=fs.mkdtempSync(path.join(tmpdir(),'cef-r105-native-fatal-'));
+ const gate=script.slice(from+begin.length,to);
+ const runner='set -euo pipefail\n'+gate+'\nprintf "OUTPUT_GATE_PASS\\n"\n';
+ const lines=[
+  '*** stack smashing detected ***: terminated',
+  'child received SIGSEGV',
+  'segfault in a child process',
+  'stack buffer overflow',
+  'AddressSanitizer: detected error',
+  'ThreadSanitizer: detected race',
+  "GPU process isn't usable. Goodbye.",
+  'FATAL: CEF child abort',
+  'SIGABRT in a utility child'
+ ];
+ const fixture=path.join(dir,'runtime-selftest.out');
+ const run=(env={})=>spawnSync('bash',['-c',runner],
+   {env:{...process.env,QA:dir,...env},encoding:'utf8',timeout:5000});
+ try {
+  for(const line of lines){
+   fs.writeFileSync(fixture,'mock private marker DO_NOT_DISCLOSE\n'+line+'\n',{mode:0o600});
+   const res=run();
+   assert.equal(res.error,undefined,line);
+   assert.equal(res.status,30,'fatal line was not blocked: '+line);
+   assert.match(res.stderr,/RUNTIME_SELFTEST=FAIL/);
+   assert.doesNotMatch(res.stderr,/DO_NOT_DISCLOSE|mock private marker/,'do not echo captured raw child output');
+  }
+  fs.writeFileSync(fixture,'CGWA_SELFTEST PASS\nCGWA_SHUTDOWN WINDOW_DESTROYED\n');
+  const clean=run();
+  assert.equal(clean.error,undefined);
+  assert.equal(clean.status,0,clean.stderr);
+  assert.match(clean.stdout,/OUTPUT_GATE_PASS/);
+  fs.rmSync(fixture);
+  const absent=run();
+  assert.equal(absent.status,31,'missing captured output must fail closed');
+  assert.match(absent.stderr,/RUNTIME_SELFTEST=FAIL/);
+  fs.writeFileSync(fixture,'CGWA_SELFTEST PASS\n');
+  const shim=path.join(dir,'grep');
+  fs.writeFileSync(shim,'#!/bin/sh\nexit 2\n',{mode:0o700});
+  const scanError=run({PATH:dir+path.delimiter+process.env.PATH});
+  assert.equal(scanError.status,31,'grep I/O failure must fail closed');
+  assert.match(scanError.stderr,/captured output scan error/);
+ } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});
