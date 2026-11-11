@@ -60,5 +60,28 @@ class FatalDiagnostics(unittest.TestCase):
                 mod.qa_canary_check(root, dest, "unsafe-log", 3)
             self.assertFalse((root / ".qa-canary-unsafe-log").exists())
 
+    def test_oversized_output_is_rejected_before_unbounded_capture(self):
+        spec = importlib.util.spec_from_file_location("txn_capture", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        for channel in ("stdout", "stderr"):
+            with self.subTest(channel=channel), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                dest = root / "candidate"
+                dest.mkdir()
+                script = dest / "launch.sh"
+                stream = "" if channel == "stdout" else " >&2"
+                script.write_text(
+                    "#!/bin/sh\n"
+                    "printf 'CGWA_SELFTEST PASS\\nCGWA_LAST_TAB_SELFTEST PASS\\n"
+                    "CGWA_UI_TAB_CLOSE_SELFTEST PASS\\n' >&2\n"
+                    "head -c 8388609 /dev/zero" + stream + "\nexit 0\n")
+                script.chmod(0o700)
+                with self.assertRaisesRegex(
+                        mod.InstallError, "QA_CANARY_OUTPUT_TOO_LARGE"):
+                    mod.qa_canary_check(root, dest, "oversized-" + channel, 5)
+                self.assertFalse(
+                    (root / (".qa-canary-oversized-" + channel)).exists())
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

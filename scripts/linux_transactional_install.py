@@ -17,8 +17,10 @@ import re
 import shlex
 import shutil
 import signal
+import selectors
 import stat
 import subprocess
+import time
 import sys
 from datetime import datetime, timezone
 
@@ -68,6 +70,40 @@ def sync_payload(root: Path):
         sync_dir(directory)
 
 
+
+def capture_bounded_qa_output(child: subprocess.Popen, seconds: int):
+    """Read both canary pipes with a hard per-stream cap and shared timeout."""
+    limit = 8 * 1024 * 1024
+    deadline = time.monotonic() + seconds
+    output = {"stdout": bytearray(), "stderr": bytearray()}
+    with selectors.DefaultSelector() as sel:
+        for name in ("stdout", "stderr"):
+            stream = getattr(child, name)
+            os.set_blocking(stream.fileno(), False)
+            sel.register(stream, selectors.EVENT_READ, name)
+        while sel.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(child.args, seconds)
+            events = sel.select(remaining)
+            if not events:
+                raise subprocess.TimeoutExpired(child.args, seconds)
+            for key, _ in events:
+                try:
+                    chunk = os.read(key.fileobj.fileno(), 65536)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    sel.unregister(key.fileobj)
+                    continue
+                destination = output[key.data]
+                ensure(len(destination) + len(chunk) <= limit,
+                       "QA_CANARY_OUTPUT_TOO_LARGE")
+                destination.extend(chunk)
+    child.wait(timeout=max(0.001, deadline - time.monotonic()))
+    return bytes(output["stdout"]), bytes(output["stderr"])
+
+
 def qa_canary_check(root: Path, dest: Path, swap_id: str, seconds: int):
     """Owner-invoked offline synthetic canary; never uses a primary browser profile."""
     ensure(1 <= seconds <= 15, "QA_CANARY_TIMEOUT_OUT_OF_RANGE")
@@ -87,10 +123,13 @@ def qa_canary_check(root: Path, dest: Path, swap_id: str, seconds: int):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             start_new_session=True)
         try:
-            output, errors = child.communicate(timeout=seconds)
+            output, errors = capture_bounded_qa_output(child, seconds)
         except subprocess.TimeoutExpired as exc:
-            os.killpg(child.pid, signal.SIGKILL)
-            child.communicate(timeout=5)
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait(timeout=5)
             raise InstallError("QA_CANARY_TIMEOUT") from exc
         ensure(child.returncode == 0, "QA_CANARY_FAILED_EXIT")
         required = (b"CGWA_SELFTEST PASS", b"CGWA_LAST_TAB_SELFTEST PASS",
@@ -127,6 +166,9 @@ def qa_canary_check(root: Path, dest: Path, swap_id: str, seconds: int):
             except ProcessLookupError:
                 pass
             child.wait(timeout=5)
+            for stream in (child.stdout, child.stderr):
+                if stream is not None:
+                    stream.close()
         shutil.rmtree(profile)
         sync_dir(root)
 
