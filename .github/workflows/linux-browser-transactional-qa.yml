@@ -4,6 +4,7 @@ on:
     paths:
       - 'scripts/linux_transactional_install.py'
       - 'test/test_linux_transactional_install.py'
+      - 'test/test_linux_transactional_canary_fatal.py'
       - '.github/workflows/linux-browser-transactional-qa.yml'
   push:
     branches:
@@ -31,5 +32,5 @@ jobs:
         run: |
           set -euo pipefail
           export PYTHONDONTWRITEBYTECODE=1
-          python3 -m py_compile scripts/linux_transactional_install.py test/test_linux_transactional_install.py
-          python3 -m unittest discover -s test -p test_linux_transactional_install.py -v
+          python3 -m py_compile scripts/linux_transactional_install.py test/test_linux_transactional_install.py test/test_linux_transactional_canary_fatal.py
+          python3 -m unittest discover -s test -p 'test_linux_transactional*.py' -v
