@@ -41,7 +41,24 @@ echo "R248_X11_COORDS wid=$wid window=${x},${y0} source=${sx},${sy} target=${tx}
 xdotool mousemove --sync "$sx" "$sy"
 sleep 0.1
 xdotool mousedown 1
-sleep 0.25
+# The native CEF button callback may arrive after the fixed sleep under CI load.
+# Hold the pointer over the actual source title until a positive native hit-test.
+pressed=0
+for _ in $(seq 1 50); do
+  if [[ -f "$profile/chrome_debug.log" ]] &&
+     grep -F -q "CGWA_NATIVE_DRAG_DIAG stage=press_sample ok=1 held=1 hit=1" "$profile/chrome_debug.log"; then
+    pressed=1
+    break
+  fi
+  sleep 0.06
+done
+if [[ "$pressed" != 1 ]]; then
+  echo "R247_NATIVE_PRESS_NOT_CONFIRMED"
+  if [[ -f "$profile/chrome_debug.log" ]]; then
+    grep -F "CGWA_NATIVE_DRAG_DIAG stage=press_sample" "$profile/chrome_debug.log" | tail -5 || true
+  fi
+  exit 41
+fi
 xdotool mousemove --sync "$tx" "$sy"
 sleep 0.35
 xdotool mouseup 1

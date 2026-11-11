@@ -1,0 +1,95 @@
+# Browser Linux version-swap/rollback candidate — 21 October 2026
+
+## Scope / non-goals
+This branch adds `scripts/linux_transactional_install.py` as an **explicit manual,
+offline** Linux version-swap installer, not an automatic or production updater.
+The source directory is not authenticated as a publisher release by this
+script; the caller must independently verify the release through a trusted
+publisher metadata channel. **No new trusted root or TUF role keys have
+been provisioned. Keep any automatic updater DISABLED.**
+
+The command requires `--source`, `--install-root`, `--version` and
+`--trusted-sandbox`, and does not request sudo. The preapproved root-owned
+SUID sandbox must be exactly mode 4755 and SHA-256-equal to the source payload.
+No `--no-sandbox` or browser extension fallback is provided.
+
+## Properties under test
+- Always deploys into a new immutable version directory, verifying the copied
+  file-by-file payload hashes before promotion.
+- All restricted QA root gates compare the **resolved** real install path,
+  before creating any directory. Symlinked ancestor escapes, fault-injection
+  exits outside the dedicated fixture, and install roots aliased inside a
+  source payload are refused before mutation. Three new negative tests
+  specifically cover those path traversal cases.
+- Exclusive `flock`; restricted-owner install directory; refuses unknown
+  current pointers, arbitrary payload symlinks, traversal/malformed versions
+  and same-version overwrites.
+- Current remains a valid local relative symlink throughout promotion:
+  prior target is first copied as `current.rollback-...`, then the staged
+  pending symlink atomically replaces `current` (no empty-current window).
+  On failure, the previous alias atomically replaces `current` again,
+  without first moving the failed candidate pointer away. The injected
+  post-promotion failure test asserts that a valid `current` exists
+  immediately before rollback begins, closing the prior error-path gap.
+- Fault injection is restricted to the explicitly named test fixture root.
+  Both interruption positions restore the original current symlink.
+- Restart-time recovery now recognizes a uniquely paired `current.pending-*`/
+  `current.rollback-*` marker from the legacy two-rename sequence, validates both target versions as local directories, and
+  restores the previous `current`. Ambiguous markers, forged external
+  rollback targets and incomplete first installs fail closed. This
+  covers a process interruption at the simulated swap boundary, **not**
+  verified power-loss durability. File data and parent-directory `fsync`
+  now have passing unit/injected-failure tests; real power-cut persistence
+  remains a separate acceptance requirement. Two actual child-process forced-exit
+  boundary tests are now part of the repeatable automated QA suite: one exits
+  before atomic promotion, preserving the old current pointer; another exits
+  immediately after promotion and verifies the retained rollback alias can
+  restore the former current pointer. These are **not** physical power-cut
+  or automatic health-gated rollback acceptance.
+- Staged regular files are `fsync`ed before promotion, followed by child
+  directories (bottom-up) and the parent install directory after renames.
+  Directory-sync errors fail closed; injected post-promotion `fsync` failure
+  restores the previous link. Tests confirm file and directory sync calls,
+  but physical crash/power-loss behavior is not claimed.
+- **Explicit QA-only health-gated activation** (`--qa-canary`) is allowed only
+  inside the dedicated fixture root. A bounded child process launches the
+  integrity-checking candidate with an isolated private `HOME`/XDG profile
+  and a minimal environment, no user cookies or credentials. Nonzero exit
+  or timeout automatically restores the prior `current` pointer atomically;
+  process-group cleanup prevents a timed-out smoke check from persisting.
+  Successful candidate checks continue the transaction normally.
+  Five security/contract tests cover success, failure rollback, timeout
+  rollback, environment scrubbing and rejection outside QA. These use
+  synthetic executables: **production CEF canary and auth continuity still
+  OPEN**, and this option never enables automatic updates.
+- Separate `launch.sh` verifies executable and root-owned SUID sandbox SHA
+  and mode on every invocation; no profile/credentials are copied.
+- Key material, accounts, production routing, ChatGPT conversations and
+  installed owner browser are deliberately not touched.
+
+## Verified source QA
+Base browser Git commit: `10e5bc57ae4301b009df9736483c62c1ebad3695`.
+- Unit/negative tests: **28 PASS / 0 FAIL** on MMZ Linux, 21 October 2026.
+- Real offline CEF build payload (1.5 GiB): isolated staged install PASS;
+  browser SHA256
+  `4d3f2b6a5389a9a2f2ae82f1f09e940c47eb29cd2e7a88504473fdcb80e3e08d`;
+  receipt SHA256
+  `b2a3798edc279f61d0c951001f5283a2b5ed9b0010f8acd50bf8afdd7eb24460`;
+  operation `65b63e0c-c6c3-44c6-bb72-fd01b4d31c4d`.
+- GUI run **via the installed `current/launch.sh`**, isolated X11/CDP:
+  initial 1 tab, create 16, reject 17th, close to 15, reopen to 16;
+  operation `2ad44f93-6d38-4c74-97bc-50e458b5615e`, exit 0.
+  No real login. Temporary X server cleaned.
+
+## Explicit blockers for automatic deployment
+Before *any* auto-update needs an out-of-band pretrusted publisher root,
+valid signatures with separately delegated targets/snapshot/timestamp metadata
+and threshold rules, expiry/freshness and anti-rollback checks. TUF provides
+a maintained specification; implementing only package SHA validation is **not**
+a TUF update client. Also require live-user opt-in/canary, auth/project binding,
+action authorization, full rollback on installed target, and independent review.
+Do not enable automatic install, silently change production symlinks or promote
+release while these gates are open.
+
+References: https://theupdateframework.io/docs/metadata/ , https://man7.org/linux/man-pages/man2/fsync.2.html , and
+https://github.com/theupdateframework/specification/blob/master/tuf-spec.md .

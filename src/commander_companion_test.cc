@@ -277,16 +277,20 @@ int main(int argc, char** argv) {
 #if defined(__linux__)
   FileGuards(unknown);
 #elif defined(_WIN32)
-  const auto windows_monitor = companion::ReadMonitor(companion::ProfileRoot());
-  Check(!windows_monitor.valid && windows_monitor.error != "WINDOWS_PRIVATE_FILE_GUARD_UNAVAILABLE", "Windows live monitor uses the native ACL guard");
-  const auto windows_observation = companion::ReadObservation(companion::ProfileRoot());
+  // Source-only tests never inspect the owner's real companion data.
+  // The native Windows private-file guard must reject an invalid root.
+  const std::string invalid_probe_root;
+  const auto windows_monitor = companion::ReadMonitor(invalid_probe_root);
+  Check(!windows_monitor.valid && windows_monitor.error == "PROFILE_ROOT_INVALID",
+        "Windows monitor rejects invalid profile root using native guard");
+  const auto windows_observation = companion::ReadObservation(invalid_probe_root);
   Check(!windows_observation.valid &&
-        windows_observation.error != "WINDOWS_PRIVATE_FILE_GUARD_UNAVAILABLE",
-        "Windows companion observation uses the native ACL guard");
-  const auto windows_binding = companion::ReadNativeBinding(companion::ProfileRoot());
+        windows_observation.error == "PROFILE_ROOT_INVALID",
+        "Windows companion observation rejects invalid profile root");
+  const auto windows_binding = companion::ReadNativeBinding(invalid_probe_root);
   Check(!windows_binding.valid &&
-        windows_binding.error != "WINDOWS_PRIVATE_FILE_GUARD_UNAVAILABLE",
-        "Windows native binding uses the native ACL guard");
+        windows_binding.error == "PROFILE_ROOT_INVALID",
+        "Windows native binding rejects invalid profile root");
 #else
   std::cout << "UNPROVEN private-file guards on unsupported runtime\n";
 #endif
