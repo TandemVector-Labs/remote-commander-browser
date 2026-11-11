@@ -84,10 +84,10 @@ def qa_canary_check(root: Path, dest: Path, swap_id: str, seconds: int):
     child = None
     try:
         child = subprocess.Popen(cmd, cwd=profile, env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             start_new_session=True)
         try:
-            _, errors = child.communicate(timeout=seconds)
+            output, errors = child.communicate(timeout=seconds)
         except subprocess.TimeoutExpired as exc:
             os.killpg(child.pid, signal.SIGKILL)
             child.communicate(timeout=5)
@@ -97,6 +97,27 @@ def qa_canary_check(root: Path, dest: Path, swap_id: str, seconds: int):
                     b"CGWA_UI_TAB_CLOSE_SELFTEST PASS")
         ensure(errors is not None and all(marker in errors for marker in required),
                "QA_CANARY_MISSING_SELFTEST_MARKER")
+        # R105: positive markers and a zero parent exit cannot override
+        # fatal CEF child diagnostics in either captured output stream.
+        fatal = re.compile(
+            rb"FATAL|SIGABRT|SIGSEGV|segfault|segmentation fault|aborted|"
+            rb"stack smashing detected|stack buffer overflow|AddressSanitizer|"
+            rb"ThreadSanitizer|GPU process isn.t usable", re.IGNORECASE)
+        ensure(not fatal.search((output or b"") + errors),
+               "QA_CANARY_FATAL_OUTPUT")
+        # A CEF fatal may exist only in the isolated Chromium debug log.
+        # Reject unsafe or oversized logs, never echo raw private diagnostics.
+        log_path = profile / "chrome_debug.log"
+        if os.path.lexists(log_path):
+            fd = os.open(log_path, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as log_file:
+                info = os.fstat(log_file.fileno())
+                ensure(stat.S_ISREG(info.st_mode) and info.st_size <= 8 * 1024 * 1024,
+                       "QA_CANARY_LOG_UNAVAILABLE")
+                log_data = log_file.read(8 * 1024 * 1024 + 1)
+            ensure(len(log_data) <= 8 * 1024 * 1024,
+                   "QA_CANARY_LOG_UNAVAILABLE")
+            ensure(not fatal.search(log_data), "QA_CANARY_FATAL_LOG")
     finally:
         if child is not None:
             # The launcher may exit while descendants in its isolated session live on.
