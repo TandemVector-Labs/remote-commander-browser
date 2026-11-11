@@ -93,15 +93,27 @@ test('R249 native drag guards compare the actual CEF View identity, not C++ wrap
 });
 
 
-test('R105 captured native child fatal is rejected even if parent process returned zero',()=>{
- const script=read('scripts/runtime-self-test.sh');
- const begin='# R105_OUTPUT_FATAL_BEGIN\n', end='# R105_OUTPUT_FATAL_END\n';
- const from=script.indexOf(begin), to=script.indexOf(end);
- assert.ok(from>=0&&to>from,'captured stdout/stderr must have an explicit fail-closed fatal gate');
+test('R105 native stdout-fatal source gate remains fail-closed across line endings',()=>{
+ const script=read('scripts/runtime-self-test.sh').replace(/\r\n/g,'\n');
+ const begin='# R105_OUTPUT_FATAL_BEGIN\n',end='# R105_OUTPUT_FATAL_END\n';
+ const from=script.indexOf(begin),to=script.indexOf(end);
+ assert.ok(from>=0&&to>from,'native stdout must have a fail-closed fatal gate');
  const after=script.indexOf('[[ "$rc" -eq 0 ]]');
  const before=script.indexOf('LOG="$QA/chrome_debug.log"');
  assert.ok(after>=0&&before>after&&from>after&&to<before,
-   'fatal output must be checked after process exit and before normal log PASS admission');
+   'fatal stdout gate must be after process rc check, before normal PASS log checks');
+ const body=script.slice(from+begin.length,to);
+ assert.match(body,/grep -Eq 'FATAL\|SIGABRT\|SIGSEGV/);
+ assert.match(body,/exit 30/);
+ assert.match(body,/exit 31/);
+ assert.match(body,/captured output scan error/);
+});
+test('R105 Linux native child fatal Bash fixtures reject zero-parent-exit diagnostics',
+ {skip:process.platform==='win32'?'Bash runtime fixture exercised by Linux CI; Windows source guard tested separately':false},()=>{
+ const script=read('scripts/runtime-self-test.sh').replace(/\r\n/g,'\n');
+ const begin='# R105_OUTPUT_FATAL_BEGIN\n',end='# R105_OUTPUT_FATAL_END\n';
+ const from=script.indexOf(begin),to=script.indexOf(end);
+ assert.ok(from>=0&&to>from,'runtime Bash gate missing');
  const {tmpdir}=require('node:os');
  const {spawnSync}=require('node:child_process');
  const dir=fs.mkdtempSync(path.join(tmpdir(),'cef-r105-native-fatal-'));
