@@ -38,7 +38,7 @@ if [[ ! -f "$QA/runtime-selftest.out" || ! -r "$QA/runtime-selftest.out" ]]; the
   exit 31
 fi
 fatal_scan_rc=0
-grep -Eq 'FATAL|SIGABRT|SIGSEGV|segfault|stack smashing detected|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable' "$QA/runtime-selftest.out" || fatal_scan_rc=$?
+grep -Eiq 'FATAL|SIGABRT|SIGSEGV|segfault|segmentation fault|aborted|stack smashing detected|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable' "$QA/runtime-selftest.out" || fatal_scan_rc=$?
 case "$fatal_scan_rc" in
   0) printf 'RUNTIME_SELFTEST=FAIL child fatal in captured output; inspect private QA log.\n' >&2; exit 30 ;;
   1) ;;
