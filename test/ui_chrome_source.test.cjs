@@ -131,7 +131,10 @@ test('R105 Linux native child fatal Bash fixtures reject zero-parent-exit diagno
   'SIGABRT in a utility child'
  ];
  const fixture=path.join(dir,'runtime-selftest.out');
- const run=(env={})=>spawnSync('bash',['-c',runner],
+ const fixtureRunner=path.join(dir,'r105-output-gate-fixture.sh');
+ // Run the tested gate as a private script file, never as injected bash -c text.
+ fs.writeFileSync(fixtureRunner,runner,{mode:0o700});
+ const run=(env={})=>spawnSync('bash',[fixtureRunner],
    {env:{...process.env,QA:dir,...env},encoding:'utf8',timeout:5000});
  try {
   for(const line of lines){
