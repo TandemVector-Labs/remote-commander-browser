@@ -103,7 +103,8 @@ test('R105 native stdout-fatal source gate remains fail-closed across line endin
  assert.ok(after>=0&&before>after&&from>after&&to<before,
    'fatal stdout gate must be after process rc check, before normal PASS log checks');
  const body=script.slice(from+begin.length,to);
- assert.match(body,/grep -Eq 'FATAL\|SIGABRT\|SIGSEGV/);
+ assert.match(body,/grep -Eiq 'FATAL\|SIGABRT\|SIGSEGV/);
+ assert.match(body,/segmentation fault\|aborted/);
  assert.match(body,/exit 30/);
  assert.match(body,/exit 31/);
  assert.match(body,/captured output scan error/);
@@ -122,6 +123,9 @@ test('R105 Linux native child fatal Bash fixtures reject zero-parent-exit diagno
  const lines=[
   '*** stack smashing detected ***: terminated',
   'child received SIGSEGV',
+  'Segmentation fault (core dumped)',
+  'Aborted (core dumped)',
+  'fatal: child process died',
   'segfault in a child process',
   'stack buffer overflow',
   'AddressSanitizer: detected error',
