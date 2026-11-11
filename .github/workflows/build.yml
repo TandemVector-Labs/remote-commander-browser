@@ -31,7 +31,7 @@ jobs:
             -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -fno-omit-frame-pointer'
           cmake --build build-companion -j2
       - name: Validate browser Light/Dark theme contrast and source
-        run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs
+        run: node --test test/ui_chrome_source.test.cjs test/ui_chrome_theme.test.cjs test/ci-native-fatal-capture.test.cjs
       - name: Run native contract and Linux private-file guards
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
@@ -113,6 +113,22 @@ jobs:
             cp "$companion_ci_profile/chrome_debug.log" .qa/companion-native-chrome.log
           fi
           [[ "$companion_ci_rc" -eq 0 ]] || { echo "NATIVE_RUNTIME_FAIL rc=$companion_ci_rc"; exit 34; }
+          # R105_CI_CHILD_OUTPUT_BEGIN
+          # The parent can exit zero after a CEF child abort. Check its captured
+          # stdout/stderr before accepting successful lifecycle log markers.
+          # Never echo captured output: it can contain private diagnostics.
+          if [[ ! -f .qa/companion-native-runtime.out || ! -r .qa/companion-native-runtime.out ]]; then
+            echo 'Native captured output unavailable; fail closed.' >&2
+            exit 37
+          fi
+          native_output_scan_rc=0
+          grep -Eiq 'FATAL|SIGSEGV|SIGABRT|segfault|segmentation fault|aborted|stack smashing|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable' .qa/companion-native-runtime.out || native_output_scan_rc=$?
+          case "$native_output_scan_rc" in
+            0) echo 'Native child fatal in captured output; fail closed.' >&2; exit 36 ;;
+            1) ;;
+            *) echo 'Native captured output scan failed; fail closed.' >&2; exit 37 ;;
+          esac
+          # R105_CI_CHILD_OUTPUT_END
           [[ -f .qa/companion-native-chrome.log ]] || { echo 'Native log missing'; exit 35; }
           grep -q 'CGWA_COMPANION_SELFTEST PASS' .qa/companion-native-chrome.log
           grep -q 'CGWA_SELFTEST PASS' .qa/companion-native-chrome.log
