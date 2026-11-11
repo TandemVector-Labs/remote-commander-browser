@@ -30,6 +30,22 @@ set -e
 cp -f "$PROFILE/chrome_debug.log" "$QA/chrome_debug.log" 2>/dev/null || true
 
 [[ "$rc" -eq 0 ]] || { printf 'RUNTIME_SELFTEST=FAIL rc=%s\n' "$rc" >&2; exit 24; }
+# R105_OUTPUT_FATAL_BEGIN
+# A zero parent exit does not prove the CEF child process was healthy.
+# Suppress raw diagnostic output, which may contain private session data.
+if [[ ! -f "$QA/runtime-selftest.out" || ! -r "$QA/runtime-selftest.out" ]]; then
+  printf 'RUNTIME_SELFTEST=FAIL captured output unavailable.\n' >&2
+  exit 31
+fi
+fatal_scan_rc=0
+grep -Eiq 'FATAL|SIGABRT|SIGSEGV|segfault|segmentation fault|aborted|stack smashing detected|stack buffer overflow|AddressSanitizer|ThreadSanitizer|GPU process isn.t usable' "$QA/runtime-selftest.out" || fatal_scan_rc=$?
+case "$fatal_scan_rc" in
+  0) printf 'RUNTIME_SELFTEST=FAIL child fatal in captured output; inspect private QA log.\n' >&2; exit 30 ;;
+  1) ;;
+  *) printf 'RUNTIME_SELFTEST=FAIL captured output scan error.\n' >&2; exit 31 ;;
+esac
+# R105_OUTPUT_FATAL_END
+
 LOG="$QA/chrome_debug.log"
 [[ -f "$LOG" ]] || { printf 'CEF debug log not produced.\n' >&2; exit 25; }
 grep -q 'CGWA_SELFTEST PASS' "$LOG" || { printf 'Tab lifecycle PASS marker missing.\n' >&2; exit 26; }
